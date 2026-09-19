@@ -85,6 +85,7 @@ ARGS="..."          BOTTLE=...              LOG=0
 | DLSS | ❌ DXMT 的 NVAPI 路径不完整,请用 TAAU 或 FSR |
 | DX12 | ❌ 该 Unity 构建里没有 `force-d3d12` |
 | 间歇性卡死(约 30%) | ⚠️ 未解决 —— 见 [docs/02](docs/02-graphics-and-stability.md) |
+| hidraw 后端的手柄为何游戏读不到 | ⚠️ 未解释 —— 三个假设均已被实测排除,见 [upstream/](upstream/) |
 
 ## 致谢
 

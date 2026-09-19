@@ -84,6 +84,7 @@ ARGS="..."          BOTTLE=...              LOG=0
 | DLSS | ❌ DXMT's NVAPI path is incomplete; use TAAU or FSR |
 | DX12 | ❌ no `force-d3d12` in this Unity build |
 | Intermittent freezes (~30 %) | ⚠️ unsolved — see [docs/02](docs/02-graphics-and-stability.md) |
+| Why hidraw-backed pads are unusable by this game | ⚠️ unexplained — three hypotheses eliminated by measurement, see [upstream/](upstream/) |
 
 ## Credits
 

@@ -7,6 +7,7 @@ Apply **after** the 23 upstream patches from
 patches/01-psgetprocessexitstatus.sh  path/to/wine-src
 patches/02-sony-no-xinput.sh          path/to/wine-src
 patches/03-ds5-native-layout.sh       path/to/wine-src
+patches/04-instance-id-charset.sh     path/to/wine-src
 ```
 
 These are **scripts, not context diffs.** They locate anchors in the source and rewrite them, so they survive
@@ -17,6 +18,7 @@ the line-number drift between CrossOver releases. Each is idempotent and refuses
 | 01 | `dlls/ntoskrnl.exe/{pnp.c,ntoskrnl.exe.spec}` | — | Implements `PsGetProcessExitStatus`, removing the ACE thread abort logged on every run |
 | 02 | `dlls/winebus.sys/main.c` | `"Sony XInput" = 0` | Stops marking DualSense / DualShock 4 as XInput-capable, matching real Windows |
 | 03 | `dlls/winebus.sys/{bus_sdl.c,main.c,unixlib.h,unixlib.c}` | (tied to 02) | Makes the SDL backend emit the native DualSense HID layout for Sony pads |
+| 04 | `dlls/winebus.sys/main.c` | — | Replaces characters Windows disallows in device instance IDs (the IOHID backend puts a colon-separated Bluetooth MAC there). Independent of 02/03 |
 
 Both gamepad patches are controlled by one value:
 

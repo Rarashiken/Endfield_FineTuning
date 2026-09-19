@@ -97,10 +97,29 @@ Recorded so nobody repeats them.
 | `Map Controllers=0` | Still XInput-marked (`is_gamepad` falls back to an axis/button-count heuristic), and yields 21 buttons with no POV — further from a DualSense, not closer |
 | Disabling the xinput DLLs for the game via `DllOverrides` | The pad goes completely dead — this game's Rewired build consumes XInput and, apparently, Raw Input, but not DirectInput |
 
-That last row is the interesting one. `padwatch.exe` reads the native IOHID device through DirectInput
-without trouble, yet the game gets nothing from it. The difference between a device the game can read and
-one it cannot is the `is_hidraw` flag — which is why the working fix keeps the SDL backend and changes the
-layout it emits, rather than switching backends.
+That last row is the interesting one, and it is still unexplained. Three hypotheses were tested and all
+three were **eliminated by measurement**:
+
+| Hypothesis | Test | Result |
+|---|---|---|
+| DirectInput does not see the hidraw device | `tools/dienum.exe`, `tools/padwatch.exe` | Sees it, reads button presses correctly, `6 axes / 14 buttons / 1 POV` |
+| Raw Input does not deliver `WM_INPUT` for it | `tools/rawinput.exe`, 30 s of input | **1971 reports** delivered (SDL backend: 2679) — works fine |
+| The instance ID is malformed and gets rejected | `patches/04`, then re-test | ID valid afterwards, game still gets nothing |
+
+The third one deserves a note of its own. The IOHID backend takes the serial number from
+`kIOHIDSerialNumberKey`, which over Bluetooth is the MAC address **with colons**, and `get_instance_id()`
+interpolates it straight into the device instance ID:
+
+```
+HID\VID_054C&PID_0DF2\256&E8:47:3A:B4:1C:0B&3AB41C0B&0&0
+```
+
+A device instance ID may not contain `< > : " / \ | ? *`. That is a genuine Wine bug — `patches/04` fixes
+it, and it is worth submitting on its own — but fixing it did **not** fix this.
+
+So the cause remains unidentified. The remaining structural difference is the `is_hidraw` flag itself, which
+on the PE side gates only `HIDRAW_FIXUP_DUALSENSE_BT` and the hidraw/non-hidraw dedup filter. The working
+fix therefore keeps the SDL backend, which the game demonstrably reads, and changes the layout it emits.
 
 ## Also worth knowing
 
