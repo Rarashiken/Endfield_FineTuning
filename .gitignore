@@ -1,5 +1,6 @@
 # 构建产物与第三方源码 —— 绝不入库
 build/
+.build/
 wine-src/
 wine-build*/
 toolchain/

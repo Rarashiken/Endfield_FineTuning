@@ -38,6 +38,15 @@ The DualSense work leaned on several sources, each of which supplied a piece:
 - **[DirectInput and XUSB Devices](https://learn.microsoft.com/en-us/windows/win32/xinput/directinput-and-xusb-devices)** —
   Microsoft's `IG_` convention, the mechanism every input library uses to skip XInput-capable devices in DirectInput.
 
+## Patcher app
+
+- **[dazi2011/crossover-patcher](https://github.com/dazi2011/crossover-patcher)** — the reference for the idea
+  of shipping a GUI patcher that users point at their own CrossOver install, rather than distributing a
+  patched CrossOver. No code was taken from it; `patcher-app/` is an independent AppKit implementation, and it
+  deliberately differs on one point: it re-signs the copied bundle and gives it its own `CFBundleIdentifier`
+  instead of stripping `_CodeSignature/`, because on macOS 27 a stripped seal is reported as a damaged
+  application. See [patcher-app/README.md](patcher-app/README.md).
+
 ## Toolchain
 
 - **[llvm-mingw](https://github.com/mstorsjo/llvm-mingw)** by Martin Storsjö — the PE cross-compiler, as a
