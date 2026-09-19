@@ -59,8 +59,9 @@ docs/        build environment, graphics, gamepad, pitfalls
 
 ## Quick start
 
-If you just want to play, build **[patcher-app](patcher-app/)** (or grab it from Releases), point it
-at your own `CrossOver.app`, and it produces a patched copy — your original install is left alone.
+If you just want to play, download **Endfield Patcher** from **[Releases](https://github.com/Rarashiken/Endfield_FineTuning/releases/latest)**, point it at your
+own `CrossOver.app`, and it produces a patched copy — your original install is left alone. (Source
+and build instructions: **[patcher-app/](patcher-app/)**.)
 
 To build everything yourself:
 

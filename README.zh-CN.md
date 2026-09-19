@@ -60,8 +60,9 @@ docs/        编译环境、图形、手柄、踩坑记录
 
 ## 快速开始
 
-只想玩的话:构建 **[patcher-app](patcher-app/)**(或从 Releases 下载),让它指向你自己的
+只想玩的话:从 **[Releases](https://github.com/Rarashiken/Endfield_FineTuning/releases/latest)** 下载 **Endfield Patcher**,让它指向你自己的
 `CrossOver.app`,它会复制一份并打好补丁 —— 原来那份不会被动。
+(源码与自行构建说明在 **[patcher-app/](patcher-app/)**。)
 
 想自己从头编译:
 
