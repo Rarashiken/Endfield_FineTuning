@@ -1,0 +1,21 @@
+# 构建产物与第三方源码 —— 绝不入库
+build/
+wine-src/
+wine-build*/
+toolchain/
+sdl2/
+*.o
+*.so
+*.sys
+*.dll
+*.exe
+!tools/*.exe.md
+
+# 从 CrossOver 备份出来的原始模块(CodeWeavers 专有二进制)
+module-backups/
+
+# 本地产物
+*.log
+日志/
+战绩.csv
+.DS_Store
