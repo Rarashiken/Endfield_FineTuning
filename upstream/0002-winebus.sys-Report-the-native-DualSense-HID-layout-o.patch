@@ -1,0 +1,199 @@
+From f3fd914d75023efcea545dd79e46807e12730ee1 Mon Sep 17 00:00:00 2001
+From: sasayaki <91686758+Rarashiken@users.noreply.github.com>
+Date: Sun, 20 Sep 2026 02:53:10 +0900
+Subject: [PATCH 2/2] winebus.sys: Report the native DualSense HID layout on
+ the SDL backend.
+
+Once a Sony pad is no longer advertised as XInput-capable, applications
+identify it by vendor/product ID and parse it with the native DualSense
+element layout. The SDL backend, however, builds a fixed XUSB-shaped
+descriptor via hid_device_add_gamepad(), so the identity is right and the
+data layout is not: face buttons land on the wrong indices, L2 and R2 are
+axes with no digital buttons at all, and the D-pad reports both buttons
+and a hat.
+
+Measured against a DualSense Edge (054c:0df2):
+
+                      SDL backend     native (hidraw)
+  Cross                 0               1
+  Circle                1               2
+  Square                2               0
+  L2 / R2               axes only       6 / 7
+  Create / Options      6 / 7           8 / 9
+  D-pad                 10-13 + hat     hat only
+
+Axes are shifted as well: the backend fills X Y Rx Ry Z Rz while a
+DualSense reports X Y Z Rz Rx Ry, so only the left stick lines up.
+
+Emit the native layout for Sony pads: axis order X Y Z Rz Rx Ry, the
+native button order, L2/R2 derived as digital buttons from the trigger
+axes, and no Y-axis inversion (that inversion exists to match the XUSB
+convention, which a DualSense does not follow).
+
+Tied to the "Sony XInput" value from the previous patch: in the default
+mode winexinput.sys translates the XUSB-shaped descriptor into XInput
+state, so the layout must not change there.
+---
+ dlls/winebus.sys/bus_sdl.c | 89 ++++++++++++++++++++++++++++++++++++--
+ dlls/winebus.sys/main.c    |  1 +
+ dlls/winebus.sys/unixlib.h |  1 +
+ 3 files changed, 88 insertions(+), 3 deletions(-)
+
+diff --git a/dlls/winebus.sys/bus_sdl.c b/dlls/winebus.sys/bus_sdl.c
+index 8e343b9..490b5eb 100644
+--- a/dlls/winebus.sys/bus_sdl.c
++++ b/dlls/winebus.sys/bus_sdl.c
+@@ -400,6 +400,57 @@ static NTSTATUS build_joystick_report_descriptor(struct unix_device *iface, cons
+     return STATUS_SUCCESS;
+ }
+ 
++/* Whether this device should report the native DualSense HID layout. */
++static BOOL use_sony_native_layout(struct sdl_device *impl)
++{
++    if (!options->sony_native_layout) return FALSE;
++    if (!pSDL_JoystickGetVendor) return FALSE;
++    return pSDL_JoystickGetVendor(impl->sdl_joystick) == 0x054c;
++}
++
++/* Native DualSense layout: axes X Y Z Rz Rx Ry, one hat switch, 14 buttons. */
++static BOOL hid_device_add_ds5_gamepad(struct unix_device *iface)
++{
++    static const USAGE_AND_PAGE device_usage = {.UsagePage = HID_USAGE_PAGE_GENERIC, .Usage = HID_USAGE_GENERIC_GAMEPAD};
++    static const USAGE lstick[]   = {HID_USAGE_GENERIC_X,  HID_USAGE_GENERIC_Y};
++    static const USAGE rstick[]   = {HID_USAGE_GENERIC_Z,  HID_USAGE_GENERIC_RZ};
++    static const USAGE triggers[] = {HID_USAGE_GENERIC_RX, HID_USAGE_GENERIC_RY};
++
++    if (!hid_device_begin_input_report(iface, &device_usage)) return FALSE;
++    if (!hid_device_add_axes(iface, 2, HID_USAGE_PAGE_GENERIC, lstick, FALSE, -32768, 32767)) return FALSE;
++    if (!hid_device_add_axes(iface, 2, HID_USAGE_PAGE_GENERIC, rstick, FALSE, -32768, 32767)) return FALSE;
++    if (!hid_device_add_axes(iface, 2, HID_USAGE_PAGE_GENERIC, triggers, FALSE, 0, 32767)) return FALSE;
++    if (!hid_device_add_hatswitch(iface, 1)) return FALSE;
++    if (!hid_device_add_buttons(iface, HID_USAGE_PAGE_BUTTON, 1, 14)) return FALSE;
++    if (!hid_device_end_input_report(iface)) return FALSE;
++    return TRUE;
++}
++
++/* SDL button -> native DualSense button index; the D-pad returns -1 and
++ * drives the hat switch instead. */
++static int ds5_button_from_sdl(int sdl_button)
++{
++    switch (sdl_button)
++    {
++    case SDL_CONTROLLER_BUTTON_X:             return 0;   /* Square */
++    case SDL_CONTROLLER_BUTTON_A:             return 1;   /* Cross */
++    case SDL_CONTROLLER_BUTTON_B:             return 2;   /* Circle */
++    case SDL_CONTROLLER_BUTTON_Y:             return 3;   /* Triangle */
++    case SDL_CONTROLLER_BUTTON_LEFTSHOULDER:  return 4;   /* L1 */
++    case SDL_CONTROLLER_BUTTON_RIGHTSHOULDER: return 5;   /* R1 */
++    /* 6 = L2 and 7 = R2 are derived from the trigger axes. */
++    case SDL_CONTROLLER_BUTTON_BACK:          return 8;   /* Create */
++    case SDL_CONTROLLER_BUTTON_START:         return 9;   /* Options */
++    case SDL_CONTROLLER_BUTTON_LEFTSTICK:     return 10;  /* L3 */
++    case SDL_CONTROLLER_BUTTON_RIGHTSTICK:    return 11;  /* R3 */
++    case SDL_CONTROLLER_BUTTON_GUIDE:         return 12;  /* PS */
++#ifdef SDL_CONTROLLER_BUTTON_TOUCHPAD
++    case SDL_CONTROLLER_BUTTON_TOUCHPAD:      return 13;  /* touchpad */
++#endif
++    default:                                  return -1;
++    }
++}
++
+ static NTSTATUS build_controller_report_descriptor(struct unix_device *iface)
+ {
+     const USAGE_AND_PAGE device_usage = {.UsagePage = HID_USAGE_PAGE_GENERIC, .Usage = HID_USAGE_GENERIC_GAMEPAD};
+@@ -409,14 +460,19 @@ static NTSTATUS build_controller_report_descriptor(struct unix_device *iface)
+     C_ASSERT(SDL_CONTROLLER_AXIS_MAX == 6);
+ 
+     if (!hid_device_begin_report_descriptor(iface, &device_usage)) return STATUS_NO_MEMORY;
+-    if (!hid_device_add_gamepad(iface)) return STATUS_NO_MEMORY;
++    if (use_sony_native_layout(impl))
++    {
++        if (!hid_device_add_ds5_gamepad(iface)) return STATUS_NO_MEMORY;
++    }
++    else if (!hid_device_add_gamepad(iface)) return STATUS_NO_MEMORY;
+     if (!descriptor_add_haptic(impl, FALSE)) return STATUS_NO_MEMORY;
+     if (!hid_device_end_report_descriptor(iface)) return STATUS_NO_MEMORY;
+ 
+     for (int i = SDL_CONTROLLER_AXIS_LEFTX; i < SDL_CONTROLLER_AXIS_MAX; i++)
+     {
+         int value = pSDL_GameControllerGetAxis(impl->sdl_controller, i);
+-        if (i == SDL_CONTROLLER_AXIS_LEFTY || i == SDL_CONTROLLER_AXIS_RIGHTY)
++        if (!use_sony_native_layout(impl) &&
++            (i == SDL_CONTROLLER_AXIS_LEFTY || i == SDL_CONTROLLER_AXIS_RIGHTY))
+             value = -value - 1; /* match XUSB / GIP protocol */
+         hid_device_set_abs_axis(iface, i, value);
+     }
+@@ -877,6 +933,27 @@ static BOOL set_report_from_controller_event(struct sdl_device *impl, SDL_Event
+             SDL_ControllerButtonEvent *ie = &event->cbutton;
+             int button;
+ 
++            if (use_sony_native_layout(impl))
++            {
++                switch (ie->button)
++                {
++                case SDL_CONTROLLER_BUTTON_DPAD_UP:
++                    hid_device_move_hatswitch(iface, 0, 0, ie->state ? -1 : +1); break;
++                case SDL_CONTROLLER_BUTTON_DPAD_DOWN:
++                    hid_device_move_hatswitch(iface, 0, 0, ie->state ? +1 : -1); break;
++                case SDL_CONTROLLER_BUTTON_DPAD_LEFT:
++                    hid_device_move_hatswitch(iface, 0, ie->state ? -1 : +1, 0); break;
++                case SDL_CONTROLLER_BUTTON_DPAD_RIGHT:
++                    hid_device_move_hatswitch(iface, 0, ie->state ? +1 : -1, 0); break;
++                default:
++                    button = ds5_button_from_sdl(ie->button);
++                    if (button >= 0) hid_device_set_button(iface, button, ie->state);
++                    break;
++                }
++                bus_event_queue_input_report(&event_queue, iface, state->report_buf, state->report_len);
++                break;
++            }
++
+             switch (ie->button)
+             {
+             case SDL_CONTROLLER_BUTTON_A: button = 0; break;
+@@ -909,11 +986,17 @@ static BOOL set_report_from_controller_event(struct sdl_device *impl, SDL_Event
+         case SDL_CONTROLLERAXISMOTION:
+         {
+             SDL_ControllerAxisEvent *ie = &event->caxis;
++            BOOL native = use_sony_native_layout(impl);
+ 
+-            if (ie->axis == SDL_CONTROLLER_AXIS_LEFTY || ie->axis == SDL_CONTROLLER_AXIS_RIGHTY)
++            if (!native && (ie->axis == SDL_CONTROLLER_AXIS_LEFTY || ie->axis == SDL_CONTROLLER_AXIS_RIGHTY))
+                 ie->value = -ie->value - 1; /* match XUSB / GIP protocol */
+ 
+             hid_device_set_abs_axis(iface, ie->axis, ie->value);
++            /* L2 / R2 are digital buttons 6 / 7 in the native layout */
++            if (native && ie->axis == SDL_CONTROLLER_AXIS_TRIGGERLEFT)
++                hid_device_set_button(iface, 6, ie->value > 1000);
++            if (native && ie->axis == SDL_CONTROLLER_AXIS_TRIGGERRIGHT)
++                hid_device_set_button(iface, 7, ie->value > 1000);
+             bus_event_queue_input_report(&event_queue, iface, state->report_buf, state->report_len);
+             break;
+         }
+diff --git a/dlls/winebus.sys/main.c b/dlls/winebus.sys/main.c
+index 5927103..efb7ec2 100644
+--- a/dlls/winebus.sys/main.c
++++ b/dlls/winebus.sys/main.c
+@@ -1272,6 +1272,7 @@ static void bus_options_init(void)
+         options.split_controllers = check_bus_option(L"Split Controllers", 0);
+         if (options.split_controllers) TRACE("SDL controller splitting enabled\n");
+         options.map_controllers = check_bus_option(L"Map Controllers", 1);
++        options.sony_native_layout = !sony_xinput_enabled;
+         if (!options.map_controllers) TRACE("SDL controller to XInput HID gamepad mapping disabled\n");
+         sdl_bus_load_mappings(&options);
+     }
+diff --git a/dlls/winebus.sys/unixlib.h b/dlls/winebus.sys/unixlib.h
+index 06ad570..dc055f3 100644
+--- a/dlls/winebus.sys/unixlib.h
++++ b/dlls/winebus.sys/unixlib.h
+@@ -64,6 +64,7 @@ struct bus_options
+     BOOL disable_udevd;
+     BOOL split_controllers;
+     BOOL map_controllers;
++    BOOL sony_native_layout;
+     UINT mappings_count;
+     struct list devices;
+     char **mappings;
+-- 
+2.54.0 (Apple Git-157)
+

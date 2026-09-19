@@ -1,0 +1,92 @@
+From c2541cc94469c795475ffac76ed0f710bb51fd5f Mon Sep 17 00:00:00 2001
+From: sasayaki <91686758+Rarashiken@users.noreply.github.com>
+Date: Sun, 20 Sep 2026 02:53:10 +0900
+Subject: [PATCH 1/2] winebus.sys: Don't advertise XInput compatibility for
+ Sony gamepads.
+
+On Windows, XInput only supports XUSB devices, i.e. Xbox controllers. A
+DualShock 4 or DualSense is exposed as a plain HID/DirectInput device
+carrying Sony's own vendor and product ID; this is why tools such as ViGEm
+or DS4Windows exist, to present a virtual Xbox pad for XInput-only titles.
+
+winebus currently marks every SDL-backed controller as is_gamepad, so
+get_compatible_ids() appends WINEBUS\WINE_COMP_XINPUT and winexinput.sys
+creates the &IG_00 and &XI_00 children. &IG_ is the documented marker
+applications use to skip a device in DirectInput and use XInput instead,
+so input libraries route Sony pads through XInput and apply an Xbox 360
+mapping to them, losing the PlayStation button glyphs the application
+would otherwise show.
+
+Skip the XInput compatible ID for DualShock 4 and DualSense, matching what
+Windows reports. Guarded by a registry value so the previous behaviour
+remains available for XInput-only titles:
+
+  HKLM\System\CurrentControlSet\Services\winebus  "Sony XInput" = dword:0
+
+The default is unchanged.
+---
+ dlls/winebus.sys/main.c | 23 +++++++++++++++++++++--
+ 1 file changed, 21 insertions(+), 2 deletions(-)
+
+diff --git a/dlls/winebus.sys/main.c b/dlls/winebus.sys/main.c
+index 5f46932..5927103 100644
+--- a/dlls/winebus.sys/main.c
++++ b/dlls/winebus.sys/main.c
+@@ -52,6 +52,7 @@ static DEVICE_OBJECT *bus_pdo;
+ static DEVICE_OBJECT *bus_fdo;
+ 
+ static struct bus_options options = {.devices = LIST_INIT(options.devices)};
++static BOOL sony_xinput_enabled = TRUE;
+ static HANDLE driver_key;
+ 
+ struct hid_report
+@@ -254,6 +255,22 @@ static WCHAR *get_hardware_ids(DEVICE_OBJECT *device)
+     return dst;
+ }
+ 
++/* On Windows, XInput only supports XUSB devices, i.e. Xbox controllers; a
++ * DualShock 4 or DualSense is exposed as a plain HID device with Sony's own
++ * vendor and product ID. winebus marks every SDL-backed controller as a
++ * gamepad, so winexinput.sys creates the &IG_00 and &XI_00 children, and
++ * applications skip the device in DirectInput and use XInput instead, which
++ * costs them the PlayStation button glyphs.
++ * Controlled by the "Sony XInput" registry value; 1 keeps the old behaviour. */
++static BOOL want_xinput_compat(const struct device_extension *ext)
++{
++    if (!ext->desc.is_gamepad) return FALSE;
++    if (sony_xinput_enabled) return TRUE;
++    if (is_dualsense_gamepad(ext->desc.vid, ext->desc.pid)) return FALSE;
++    if (is_dualshock4_gamepad(ext->desc.vid, ext->desc.pid)) return FALSE;
++    return TRUE;
++}
++
+ static WCHAR *get_compatible_ids(DEVICE_OBJECT *device)
+ {
+     static const WCHAR xinput_compat[] = L"WINEBUS\\WINE_COMP_XINPUT";
+@@ -282,12 +299,12 @@ static WCHAR *get_compatible_ids(DEVICE_OBJECT *device)
+     }
+ 
+     size = sizeof(hid_compat) + usb_len * sizeof(WCHAR);
+-    if (ext->desc.is_gamepad) size += sizeof(xinput_compat);
++    if (want_xinput_compat(ext)) size += sizeof(xinput_compat);
+ 
+     if ((dst = ExAllocatePool(PagedPool, size + sizeof(WCHAR))))
+     {
+         pos = dst;
+-        if (ext->desc.is_gamepad)
++        if (want_xinput_compat(ext))
+         {
+             memcpy(pos, xinput_compat, sizeof(xinput_compat));
+             pos += sizeof(xinput_compat) / sizeof(WCHAR);
+@@ -1239,6 +1256,8 @@ static void load_device_options(void)
+ 
+ static void bus_options_init(void)
+ {
++    sony_xinput_enabled = check_bus_option(L"Sony XInput", 1);
++    if (!sony_xinput_enabled) TRACE("Sony gamepads will not be marked XInput-capable\n");
+     options.disable_sdl = !check_bus_option(L"Enable SDL", 1);
+     if (options.disable_sdl) TRACE("SDL devices disabled in registry\n");
+     options.disable_hidraw = check_bus_option(L"DisableHidraw", 0);
+-- 
+2.54.0 (Apple Git-157)
+

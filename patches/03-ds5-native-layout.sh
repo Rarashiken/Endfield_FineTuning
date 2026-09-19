@@ -32,16 +32,22 @@ def edit(rel, pairs):
 # --- 1) 共享结构加字段 ---
 edit('dlls/winebus.sys/unixlib.h', [
     ("    BOOL map_controllers;\n    UINT mappings_count;",
-     "    BOOL map_controllers;\n    BOOL sony_native_layout;  /* 索尼手柄使用 DualSense 原生 HID 布局 */\n    UINT mappings_count;"),
+     "    BOOL map_controllers;\n    BOOL sony_native_layout;\n    UINT mappings_count;"),
 ])
 
-# --- 2) WoW64 thunk 同步(字段顺序必须一致) ---
-edit('dlls/winebus.sys/unixlib.c', [
-    ("        BOOL map_controllers;\n        UINT mappings_count;",
-     "        BOOL map_controllers;\n        BOOL sony_native_layout;\n        UINT mappings_count;"),
-    ("        params32->map_controllers,\n        params32->mappings_count,",
-     "        params32->map_controllers,\n        params32->sony_native_layout,\n        params32->mappings_count,"),
-])
+# --- 2) WoW64 thunk 同步(字段顺序必须一致)---
+# 上游 Wine 没有这个 32 位 thunk,CrossOver 有。不存在就跳过。
+_thunk = os.path.join(src, 'dlls/winebus.sys/unixlib.c')
+if 'params32->map_controllers,' in open(_thunk, encoding='utf-8').read():
+    edit('dlls/winebus.sys/unixlib.c', [
+        ("        BOOL map_controllers;\n        UINT mappings_count;",
+         "        BOOL map_controllers;\n        BOOL sony_native_layout;\n        UINT mappings_count;"),
+        ("        params32->map_controllers,\n        params32->mappings_count,",
+         "        params32->map_controllers,\n        params32->sony_native_layout,\n        params32->mappings_count,"),
+    ])
+    print("WoW64 thunk 已同步")
+else:
+    print("未发现 WoW64 thunk(上游 Wine),跳过")
 
 # --- 3) PE 侧:与 Sony XInput 开关绑定 ---
 edit('dlls/winebus.sys/main.c', [
@@ -54,7 +60,7 @@ edit('dlls/winebus.sys/main.c', [
 edit('dlls/winebus.sys/bus_sdl.c', [
     # 4a. 判定helper + 原生描述符,插在 build_controller_report_descriptor 之前
     ("static NTSTATUS build_controller_report_descriptor(struct unix_device *iface)",
-     """/* 该设备是否应使用 DualSense 原生 HID 布局 */
+     """/* Whether this device should report the native DualSense HID layout. */
 static BOOL use_sony_native_layout(struct sdl_device *impl)
 {
     if (!options->sony_native_layout) return FALSE;
@@ -62,7 +68,7 @@ static BOOL use_sony_native_layout(struct sdl_device *impl)
     return pSDL_JoystickGetVendor(impl->sdl_joystick) == 0x054c;
 }
 
-/* DualSense 原生布局:轴 X Y Z Rz Rx Ry,14 个按钮,1 个帽子开关 */
+/* Native DualSense layout: axes X Y Z Rz Rx Ry, one hat switch, 14 buttons. */
 static BOOL hid_device_add_ds5_gamepad(struct unix_device *iface)
 {
     static const USAGE_AND_PAGE device_usage = {.UsagePage = HID_USAGE_PAGE_GENERIC, .Usage = HID_USAGE_GENERIC_GAMEPAD};
@@ -80,25 +86,26 @@ static BOOL hid_device_add_ds5_gamepad(struct unix_device *iface)
     return TRUE;
 }
 
-/* SDL 按钮 -> DualSense 原生按钮序;十字键返回 -1(只走帽子开关) */
+/* SDL button -> native DualSense button index; the D-pad returns -1 and
+ * drives the hat switch instead. */
 static int ds5_button_from_sdl(int sdl_button)
 {
     switch (sdl_button)
     {
-    case SDL_CONTROLLER_BUTTON_X:             return 0;   /* 方 */
-    case SDL_CONTROLLER_BUTTON_A:             return 1;   /* 叉 */
-    case SDL_CONTROLLER_BUTTON_B:             return 2;   /* 圆 */
-    case SDL_CONTROLLER_BUTTON_Y:             return 3;   /* 三角 */
+    case SDL_CONTROLLER_BUTTON_X:             return 0;   /* Square */
+    case SDL_CONTROLLER_BUTTON_A:             return 1;   /* Cross */
+    case SDL_CONTROLLER_BUTTON_B:             return 2;   /* Circle */
+    case SDL_CONTROLLER_BUTTON_Y:             return 3;   /* Triangle */
     case SDL_CONTROLLER_BUTTON_LEFTSHOULDER:  return 4;   /* L1 */
     case SDL_CONTROLLER_BUTTON_RIGHTSHOULDER: return 5;   /* R1 */
-    /* 6 = L2, 7 = R2 由扳机轴推导 */
+    /* 6 = L2 and 7 = R2 are derived from the trigger axes. */
     case SDL_CONTROLLER_BUTTON_BACK:          return 8;   /* Create */
     case SDL_CONTROLLER_BUTTON_START:         return 9;   /* Options */
     case SDL_CONTROLLER_BUTTON_LEFTSTICK:     return 10;  /* L3 */
     case SDL_CONTROLLER_BUTTON_RIGHTSTICK:    return 11;  /* R3 */
     case SDL_CONTROLLER_BUTTON_GUIDE:         return 12;  /* PS */
 #ifdef SDL_CONTROLLER_BUTTON_TOUCHPAD
-    case SDL_CONTROLLER_BUTTON_TOUCHPAD:      return 13;  /* 触摸板 */
+    case SDL_CONTROLLER_BUTTON_TOUCHPAD:      return 13;  /* touchpad */
 #endif
     default:                                  return -1;
     }
