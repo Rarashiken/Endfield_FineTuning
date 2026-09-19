@@ -49,16 +49,23 @@ is identified as a DualSense the game parses it that way. Full story, including 
 ## Layout
 
 ```
-patches/    three patch scripts (anchor-based, idempotent, survive line drift)
-scripts/    module swap / rollback / bottle setup, and the launcher
-tools/      DirectInput probes (dienum, padwatch)
-docs/       build environment, graphics, gamepad, pitfalls
+patches/     four patch scripts (anchor-based, idempotent, survive line drift)
+scripts/     module swap / rollback / bottle setup, and the launcher
+patcher-app/ a GUI patcher that turns a copy of your CrossOver into the patched build
+tools/       DirectInput / Raw Input probes (dienum, padwatch, rawinput)
+upstream/    the same fixes as git-format patches, for submission to Wine
+docs/        build environment, graphics, gamepad, pitfalls
 ```
 
 ## Quick start
 
+If you just want to play, build **[patcher-app](patcher-app/)** (or grab it from Releases), point it
+at your own `CrossOver.app`, and it produces a patched copy — your original install is left alone.
+
+To build everything yourself:
+
 1. Apply upstream's 23 patches to CrossOver source matching your installed version.
-2. Apply `patches/01`, `02`, `03`.
+2. Apply `patches/01` through `04`.
 3. Build — see **[docs/01-build-environment.md](docs/01-build-environment.md)**.
 4. Install with `scripts/swap-built-modules.sh`; roll back with `scripts/rollback-modules.sh`.
 5. Launch with `scripts/launch-endfield.command`.

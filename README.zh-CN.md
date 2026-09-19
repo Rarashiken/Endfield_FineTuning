@@ -50,16 +50,23 @@ DualSense,游戏就会按原生布局解析数据。完整过程(含四种**失�
 ## 目录结构
 
 ```
-patches/    三个补丁脚本(基于锚点、幂等、不受行号漂移影响)
-scripts/    模块替换 / 回滚 / 容器创建,以及启动器
-tools/      DirectInput 探针(dienum、padwatch)
-docs/       编译环境、图形、手柄、踩坑记录
+patches/     四个补丁脚本(基于锚点、幂等、不受行号漂移影响)
+scripts/     模块替换 / 回滚 / 容器创建,以及启动器
+patcher-app/ 图形界面打补丁工具,把你自己的 CrossOver 复制一份并打好补丁
+tools/       DirectInput / Raw Input 探针(dienum、padwatch、rawinput)
+upstream/    同样的修复,整理成 git 格式补丁,用于提交给 Wine
+docs/        编译环境、图形、手柄、踩坑记录
 ```
 
 ## 快速开始
 
+只想玩的话:构建 **[patcher-app](patcher-app/)**(或从 Releases 下载),让它指向你自己的
+`CrossOver.app`,它会复制一份并打好补丁 —— 原来那份不会被动。
+
+想自己从头编译:
+
 1. 对与你所装版本匹配的 CrossOver 源码,应用上游的 23 个补丁;
-2. 应用本仓库的 `patches/01`、`02`、`03`;
+2. 应用本仓库的 `patches/01` 到 `04`;
 3. 编译 —— 见 **[docs/01-build-environment.md](docs/01-build-environment.md)**;
 4. 用 `scripts/swap-built-modules.sh` 装机,用 `scripts/rollback-modules.sh` 回滚;
 5. 用 `scripts/launch-endfield.command` 启动。
