@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# build-app.sh — build "FineTuning Patcher.app" (SwiftPM + manual bundle assembly; no Xcode needed,
+# build-app.sh — build "Endfield Patcher.app" (SwiftPM + manual bundle assembly; no Xcode needed,
 # only the Command Line Tools).
 #
 # The app bundles the three pre-built patched Wine modules as its payload, so a completed
@@ -18,9 +18,9 @@ set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")/.." && pwd)"          # patcher-app/
 REPO="$(cd "$HERE/.." && pwd)"
-APP_NAME="FineTuning Patcher"
-EXE="FineTuningPatcher"
-BUNDLE_ID="io.github.Rarashiken.FineTuningPatcher"
+APP_NAME="Endfield Patcher"
+EXE="EndfieldPatcher"
+BUNDLE_ID="io.github.Rarashiken.EndfieldPatcher"
 VERSION="1.0.0"
 PAYLOAD_DIR="${PAYLOAD_DIR:-$REPO/build/wine-build64}"
 CODESIGN_ID="${CODESIGN_ID:--}"

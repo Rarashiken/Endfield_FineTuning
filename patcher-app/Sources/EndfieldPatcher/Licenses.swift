@@ -16,12 +16,12 @@ struct LicenseComponent: Identifiable, Hashable {
 
     static let all: [LicenseComponent] = [
         LicenseComponent(
-            id: "finetuning-patcher",
-            name: "FineTuning Patcher",
+            id: "endfield-patcher",
+            name: "Endfield Patcher",
             license: "MIT",
             summary: "This application — the interface and patching logic.",
             notice: "Copyright © 2026 Endfield_FineTuning contributors.",
-            textFile: "mit-finetuning-patcher.txt",
+            textFile: "mit-endfield-patcher.txt",
             links: [
                 LicenseLink(label: "Project repository", url: "https://github.com/Rarashiken/Endfield_FineTuning"),
             ]

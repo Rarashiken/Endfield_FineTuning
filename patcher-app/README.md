@@ -1,4 +1,4 @@
-# FineTuning Patcher.app
+# Endfield Patcher.app
 
 A small macOS app that turns a copy of **CrossOver 26.3.0** into the patched build that runs
 **Arknights: Endfield** on Apple Silicon — and that shows a DualSense as a DualSense. It is the
@@ -33,7 +33,7 @@ There is also a headless mode, which runs the exact same code path — useful fo
 testing a build without clicking through the window:
 
 ```bash
-"FineTuning Patcher.app/Contents/MacOS/FineTuningPatcher" \
+"Endfield Patcher.app/Contents/MacOS/EndfieldPatcher" \
     --patch /Applications/CrossOver.app /Applications/CrossOver-Endfield.app
 ```
 
@@ -48,7 +48,7 @@ AppKit and not SwiftUI: the SwiftUI macro plugins ship with full Xcode only.)
 
 # 2. Build the app around it
 PAYLOAD_DIR=/path/to/wine-build64 ./patcher-app/scripts/build-app.sh
-open "patcher-app/build/FineTuning Patcher.app"
+open "patcher-app/build/Endfield Patcher.app"
 ```
 
 `PAYLOAD_DIR` overrides where the modules come from (either a `build/wine-build64` tree or a flat
@@ -73,7 +73,7 @@ change). If `AppIcon.icns` is absent, the app simply builds without a custom ico
   patches — see [patches/README.md](../patches/README.md) for authorship).
 - The app's **Licenses…** window shows all of this, with the full license texts, offline.
 
-If you publish a built `FineTuning Patcher.app` (e.g. a GitHub Release), LGPL-2.1 requires you to
+If you publish a built `Endfield Patcher.app` (e.g. a GitHub Release), LGPL-2.1 requires you to
 make the **complete corresponding source** of the payload available: this repository's patches +
 the exact `crossover-sources-26.3.0` archive from
 [media.codeweavers.com/pub/crossover/source](https://media.codeweavers.com/pub/crossover/source/).
@@ -87,7 +87,7 @@ the game. It requires the user's own licensed CrossOver install as input.
 
 ```
 Package.swift                      SwiftPM manifest (macOS 13+)
-Sources/FineTuningPatcher/
+Sources/EndfieldPatcher/
   main.swift                       entry point; dispatches --patch before touching NSApplication
   MainWindow.swift                 the AppKit window (source picker, progress, log)
   PatcherEngine.swift              the patch steps themselves

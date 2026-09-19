@@ -257,7 +257,7 @@ final class PatcherEngine {
         _ = try? run("/usr/bin/xattr", ["-drs", "com.apple.quarantine", app.path])
 
         let entitlements = FileManager.default.temporaryDirectory
-            .appendingPathComponent("finetuning-entitlements-\(UUID().uuidString).plist")
+            .appendingPathComponent("endfield-patcher-entitlements-\(UUID().uuidString).plist")
         defer { try? FileManager.default.removeItem(at: entitlements) }
 
         var args = ["--force", "--sign", "-"]
@@ -321,7 +321,7 @@ final class PatcherEngine {
         // stderr goes to a file rather than a second pipe so neither stream can
         // fill its buffer and stall the child while we drain the other one.
         let errFile = FileManager.default.temporaryDirectory
-            .appendingPathComponent("finetuning-stderr-\(UUID().uuidString)")
+            .appendingPathComponent("endfield-patcher-stderr-\(UUID().uuidString)")
         FileManager.default.createFile(atPath: errFile.path, contents: nil)
         defer { try? FileManager.default.removeItem(at: errFile) }
 

@@ -1,6 +1,6 @@
 import Foundation
 
-/// Headless mode: `FineTuning Patcher.app/Contents/MacOS/FineTuningPatcher \
+/// Headless mode: `Endfield Patcher.app/Contents/MacOS/EndfieldPatcher \
 ///     --patch /Applications/CrossOver.app /Applications/CrossOver-Endfield.app`
 ///
 /// It exists so the patch sequence can be exercised (and scripted) without
@@ -11,7 +11,7 @@ enum PatcherCLI {
     static func run(arguments: [String]) -> Int32 {
         guard arguments.count == 2 else {
             FileHandle.standardError.write(Data("""
-            usage: FineTuningPatcher --patch <source CrossOver.app> <destination .app>
+            usage: EndfieldPatcher --patch <source CrossOver.app> <destination .app>
 
             The destination must not already exist.
 

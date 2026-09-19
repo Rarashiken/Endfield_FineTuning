@@ -54,7 +54,7 @@ final class MainWindowController: NSWindowController {
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 620, height: 470),
                               styleMask: [.titled, .closable, .miniaturizable],
                               backing: .buffered, defer: false)
-        window.title = "FineTuning Patcher"
+        window.title = "Endfield Patcher"
         window.center()
         self.init(window: window)
         build()
