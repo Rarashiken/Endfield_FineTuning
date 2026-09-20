@@ -189,6 +189,32 @@ any of these happen:
 2. macOS 28 reaches beta;
 3. someone lands Rosetta fixes for the arm64 path first.
 
+## Scripted route
+
+The whole thing is four scripts, which is also how the Preview build was actually produced — the
+prose below explains *why* each step is the way it is, but you do not have to follow it by hand:
+
+```bash
+export BUILD_ROOT=~/cx-preview-build
+
+scripts/setup-toolchain.sh                      # llvm-mingw + bison 3.8.2 + SDL headers
+
+SOURCE_TARBALL=~/crossover-sources-20260821.tar.gz \
+UPSTREAM_PATCHES=~/Endfield_FineWine/patches \
+  scripts/prepare-preview-source.sh             # unpack, 20 upstream patches, 3 fixes, our 4
+
+scripts/build-preview-modules.sh                # configure + make + winebus/ntdll relink + checks
+```
+
+`prepare-preview-source.sh` skips the two obsolete guarded-mutex patches explicitly, applies the
+`cocoa_app.m` build fix, ports the privileged-instruction half of the Rosetta patch, and then
+verifies the result — leftover `.rej` files, and the definition count of each guarded mutex — rather
+than trusting exit statuses. `build-preview-modules.sh` checks that the SDL SONAME and both sets of
+rpaths actually made it into the binaries.
+
+Nothing in `$BUILD_ROOT` needs keeping: it is all reproducible from these scripts plus the source
+tarball.
+
 ## Building against CrossOver Preview (Wine 11.15)
 
 Preview ships **D3DMetal 4.0b2** where the 26.3 release ships 3.0, so a Preview-based install has

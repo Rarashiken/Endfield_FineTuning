@@ -10,6 +10,7 @@
 #   PAYLOAD_DIR_RELEASE     modules built against CrossOver 26.3   (Wine 11.0)
 #   PAYLOAD_DIR_PREVIEW     modules built against Preview 20260821 (Wine 11.15)
 #   PAYLOAD_DIR             alias for PAYLOAD_DIR_RELEASE
+#   APP_NAME / BUNDLE_ID    override, for building one variant per flavour
 #                           (default: <repo>/build/wine-build64, the build-wine.sh output tree;
 #                            a flat directory holding ntdll.so/kernel32.dll/ntoskrnl.exe also works)
 #   CODESIGN_ID             signing identity (default "-" = ad-hoc; set your "Developer ID
@@ -20,9 +21,9 @@ set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")/.." && pwd)"          # patcher-app/
 REPO="$(cd "$HERE/.." && pwd)"
-APP_NAME="Endfield Patcher"
+APP_NAME="${APP_NAME:-Endfield Patcher}"
 EXE="EndfieldPatcher"
-BUNDLE_ID="io.github.Rarashiken.EndfieldPatcher"
+BUNDLE_ID="${BUNDLE_ID:-io.github.Rarashiken.EndfieldPatcher}"
 VERSION="1.0.0"
 CODESIGN_ID="${CODESIGN_ID:--}"
 OUT="$HERE/build"
