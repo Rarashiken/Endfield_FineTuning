@@ -75,9 +75,13 @@ docs/        编译环境、图形、手柄、踩坑记录
 启动器选项(每一项都会从容器**回读验证**,而不是只打印意图):
 
 ```bash
-PADMODE=ps|xinput   BACKEND=dxmt|d3dmetal   RETINA=y|n   MSYNC=0|1   NVEXT=0|1
-ARGS="..."          BOTTLE=...              LOG=0
+GFXAPI=d3d11|vulkan   BACKEND=dxmt|d3dmetal   PADMODE=ps|xinput   RETINA=y|n
+MSYNC=0|1             NVEXT=0|1               MTL4=0|1            METALFX=0|1
+ARGS="..."            BOTTLE=...              LOG=0
 ```
+
+跑完会打印**游戏自己记录的结果** —— 它实际选了哪个渲染器、Metal 4 有没有真的启用 ——
+而不是把传进去的参数原样回显。
 
 `PADMODE=ps` 是 DualSense 方案;`PADMODE=xinput` 回到原始行为(手柄可用,图标是 Xbox)。
 

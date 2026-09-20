@@ -74,9 +74,13 @@ To build everything yourself:
 Launcher options (all read back and verified against the bottle, never just echoed):
 
 ```bash
-PADMODE=ps|xinput   BACKEND=dxmt|d3dmetal   RETINA=y|n   MSYNC=0|1   NVEXT=0|1
-ARGS="..."          BOTTLE=...              LOG=0
+GFXAPI=d3d11|vulkan   BACKEND=dxmt|d3dmetal   PADMODE=ps|xinput   RETINA=y|n
+MSYNC=0|1             NVEXT=0|1               MTL4=0|1            METALFX=0|1
+ARGS="..."            BOTTLE=...              LOG=0
 ```
+
+It reports what the game itself logged — the renderer it actually chose, whether Metal 4 engaged —
+rather than echoing back what it was asked for.
 
 `PADMODE=ps` is the DualSense path; `PADMODE=xinput` restores stock behaviour (working pad, Xbox glyphs).
 

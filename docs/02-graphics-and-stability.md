@@ -3,6 +3,26 @@
 Upstream reached gameplay through Apple's D3DMetal. On this setup that path was unstable, and the fix was a
 different translation layer plus a specific set of Unity flags.
 
+## Which backend to use
+
+Short answer: **DXMT is still the default, and that is deliberate.**
+
+| | Needs | Retina | DLSS | Freezes |
+|---|---|---|---|---|
+| `CX_GRAPHICS_BACKEND=dxmt` | nothing — ships with CrossOver | ✅ | ❌ (black screen if forced on) | 14 runs, 5 froze |
+| `d3dmetal` + **D3DMetal 3.0** | nothing — ships with CrossOver | ✅ | ❌ | **random freezes, verified** |
+| `d3dmetal` + **D3DMetal 4.0b2** | Apple GPTK4, installed by hand | ✅ | ✅ MetalFX | 2 runs, 0 froze |
+
+The last row is the best configuration, and it is the one you should use **if you have installed
+GPTK4 yourself**. It is not the default here for one reason: **Apple's Game Porting Toolkit may not
+be redistributed.** Anything produced from this repository — the patcher app included — carries
+whatever D3DMetal your CrossOver shipped with, which for CrossOver 26.3 is 3.0, and 3.0 is the
+version with the verified freezes. So for anyone who has not installed GPTK4, DXMT remains the
+correct choice, and the launcher keeps `BACKEND=dxmt` as its default.
+
+To use the third row: install GPTK4, copy its `D3DMetal.framework` and `libd3dshared.dylib` over
+`Contents/SharedSupport/CrossOver/lib64/apple_gptk/external/`, then launch with `BACKEND=d3dmetal`.
+
 ## The configuration
 
 Bottle environment (`cxbottle.conf`, `[EnvironmentVariables]`):
@@ -82,6 +102,52 @@ run's log for `Enabled MTL4 backend` and reports when it is absent, rather than 
 D3DMetal 4.0b2 comes from **Apple's Game Porting Toolkit 4**, which may not be redistributed. It has
 to be installed by hand over `lib64/apple_gptk/external/`. Anything built from this repository, the
 patcher app included, ships with whatever D3DMetal your CrossOver came with — 3.0 for CrossOver 26.3.
+
+## Vulkan: it initialises now, but it is not usable
+
+The game supports both Vulkan and D3D11, and Unity picks Vulkan by default — which on Windows is
+usually the faster path. This page used to justify `-force-d3d11` with a MoltenVK failure:
+
+```
+[mvk-error] VK_ERROR_INITIALIZATION_FAILED: Shader library compile failed (Error code 3)
+```
+
+**That justification has expired.** Vulkan now initialises cleanly, with no `mvk-error` at all:
+
+```
+Forcing GfxDevice: Vulkan
+[Vulkan init] Physical Device [0]: "Apple M5 Pro" apiVersion=1.2.290
+```
+
+The conclusion did not change, but the reason did. Four measured runs:
+
+| Configuration | Result |
+|---|---|
+| `RETINA=y` | White screen — but with audio and a visible "login succeeded" prompt, i.e. **it is rendering, and overexposed** |
+| `RETINA=y`, DLSS switched to TAAU in-game | Same white screen — **DLSS is not the cause** |
+| `RETINA=n` | Picture correct, then stuck compiling shaders, extremely slow |
+| `RETINA=n`, second run | Compiles quickly, music switches to the in-game track (so the scene loaded) — **black screen throughout** |
+
+Why it is not usable:
+
+1. **Retina has to be off.** The swapchain reports both `colorspace 0` (SRGB_NONLINEAR) and
+   `1000104001` (DISPLAY_P3_NONLINEAR); a white screen with the content still visible underneath is
+   the signature of a linear/sRGB double conversion. None of MoltenVK's 43 `MVK_CONFIG_*` knobs
+   touch colour space, so this layer is out of reach. It is the same class of problem as the grey
+   screen D3D11 gets without `-force-d3d11-bitblt-mode`.
+2. **Turning Retina off just trades white for black.** The game reaches frame 549, the gameplay
+   layer keeps logging, the renderer reports nothing wrong, and no picture arrives. Accompanied by
+   `wine client error:544: read: Bad address`.
+3. **The PSO cache never lands.** Every run logs `Vulkan PSO: cache data not found` and
+   `vulkan_pso_cache.bin` is never created, so every launch recompiles every shader. For contrast,
+   `dx11_pso_cache.bin` is 65 bytes — under D3D11 the shaders are managed by D3DMetal/DXMT instead.
+   MoltenVK has no disk cache of its own; it relies entirely on that Unity file.
+4. **No DLSS on Vulkan, ever.** The Streamline plugins (`sl.dlss.dll` and friends) only have
+   D3D11/D3D12 backends, and the NGX implementation underneath them comes from D3DMetal.
+
+The root cause is simply that Unity has never supported Vulkan on macOS, and
+`Windows game → Wine → MoltenVK → Metal` is a path nobody tests. Use `GFXAPI=vulkan` in the launcher
+if you want to re-check this in future; it prints what the game itself reports, not what was asked for.
 
 ## DX12 is not available
 
