@@ -110,3 +110,57 @@ locally built          : 1668 exports, PsGetProcessExitStatus at ordinal 918, RV
 
 Identical count and identical ordinal means the source tree matches what CodeWeavers shipped, and the only
 difference is the one intended.
+
+## The architecture this all rests on — and when it expires
+
+Everything above targets **x86_64**, because that is what CrossOver 26.3 is, all the way down:
+
+```
+lib/wine/    i386-windows   x86_64-unix   x86_64-windows      (no aarch64 anywhere)
+wineserver, ntdll.so, libMoltenVK.dylib    all lipo -archs = x86_64
+```
+
+The Unix side runs under Rosetta too. That is *why* this project's hardest problems are Rosetta bugs.
+
+CodeWeavers' Preview release notes state that **Intel/x86_64 support ends with macOS 28**, and that
+they are moving to native **arm64 with Rosetta running the PE side** — the new-wow64 arrangement used
+on Linux — described there as not yet stable. (Stated by CodeWeavers; not independently verified here.)
+
+### Why that is not just a recompile
+
+Wine compiles exactly one signal-handling file per target architecture:
+
+```
+dlls/ntdll/unix/signal_arm.c
+dlls/ntdll/unix/signal_arm64.c
+dlls/ntdll/unix/signal_i386.c
+dlls/ntdll/unix/signal_x86_64.c   ← both Rosetta fixes live here
+```
+
+On an arm64 Unix side, `signal_x86_64.c` **is not compiled at all**. The patches do not need porting
+so much as re-deriving: the game is still an x86_64 PE still running under Rosetta, so the two bugs
+(multi-byte NOP misreported as illegal, `mov reg,cr3` delivered as invalid-opcode instead of `#GP`)
+are presumably still there — but they now surface through arm64 Unix code receiving a fault from
+Rosetta, which is a different path from the one these fixes sit on.
+
+| Module | Side | Under arm64 Unix |
+|---|---|---|
+| `ntdll.so` | Unix | **Rosetta fixes do not apply**; needs re-deriving |
+| `winebus.so` | Unix | Patch 03's SDL code is platform-independent, but needs an arm64 toolchain |
+| `winebus.sys`, `ntoskrnl.exe`, `kernel32.dll` | PE | Unaffected — still x86_64 PE |
+
+So the gamepad work (patches 02/03/04) and `PsGetProcessExitStatus` (01) survive largely intact. The
+cost falls on upstream Endfield_FineWine's central contribution: the stage-1 Rosetta fixes.
+
+### Recommendation
+
+**Stay on x86_64 builds for now.** The toolchain, the patches and the whole verification approach are
+built around it, and the arm64 path is described by its own authors as unstable.
+
+But this is the one item in this project with an actual deadline. Freezes, Vulkan, newer Wine — those
+are trade-offs. This one isn't: once x86_64 Wine is gone, none of this works. Worth revisiting when
+any of these happen:
+
+1. CodeWeavers declares the arm64 build stable;
+2. macOS 28 reaches beta;
+3. someone lands Rosetta fixes for the arm64 path first.
