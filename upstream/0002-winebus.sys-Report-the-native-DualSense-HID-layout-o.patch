@@ -33,6 +33,8 @@ convention, which a DualSense does not follow).
 Tied to the "Sony XInput" value from the previous patch: in the default
 mode winexinput.sys translates the XUSB-shaped descriptor into XInput
 state, so the layout must not change there.
+
+Signed-off-by: sasayaki <91686758+Rarashiken@users.noreply.github.com>
 ---
  dlls/winebus.sys/bus_sdl.c | 89 ++++++++++++++++++++++++++++++++++++--
  dlls/winebus.sys/main.c    |  1 +

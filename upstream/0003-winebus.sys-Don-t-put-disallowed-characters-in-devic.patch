@@ -20,6 +20,8 @@ such device is present.
 Replace the disallowed characters when building the instance ID.
 desc.serialnumber itself is left alone, so the HID serial number string
 reported to applications keeps its original form.
+
+Signed-off-by: sasayaki <91686758+Rarashiken@users.noreply.github.com>
 ---
  dlls/winebus.sys/main.c | 12 ++++++++++++
  1 file changed, 12 insertions(+)

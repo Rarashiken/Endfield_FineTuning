@@ -13,9 +13,27 @@ are Endfield-specific.
 
 ## How to submit
 
-Wine does **not** accept GitHub pull requests. Either a merge request on
-<https://gitlab.winehq.org/wine/wine> (needs a WineHQ GitLab account), a bug on <https://bugs.winehq.org>
-with the patches attached, or the **wine-devel** mailing list.
+**Merge requests on <https://gitlab.winehq.org/wine/wine>.** Wine retired the patch tracker and no
+longer takes patches by email — the wine-devel mailing list still carries the discussion, because
+GitLab mirrors merge requests and comments to it, but submission itself goes through GitLab. The
+forum at forum.winehq.org is user support, not development; bugs.winehq.org is for bug reports.
+
+It needs a **WineHQ GitLab account**, which is separate from a forum or Bugzilla account.
+
+Project rules that matter for these: keep each MR small, few patches per MR, and **every commit needs
+`Signed-off-by`** (already present in the `.patch` files here).
+
+Suggested split — they are independent, and one is far less contentious than the others:
+
+| MR | Patches | |
+|---|---|---|
+| first | `0003` | a plain correctness fix, no behaviour choice to argue about |
+| later | `0001` + `0002` | a deliberate behaviour change; expect discussion (see below) |
+
+The `Signed-off-by` lines currently use a GitHub `users.noreply.github.com` address. That works
+mechanically, but a reachable address is better for a project that may want to ask questions about a
+patch months later — worth changing before submitting.
+
 
 ## 0003 — device instance IDs
 

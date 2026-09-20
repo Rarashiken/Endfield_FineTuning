@@ -24,6 +24,8 @@ remains available for XInput-only titles:
   HKLM\System\CurrentControlSet\Services\winebus  "Sony XInput" = dword:0
 
 The default is unchanged.
+
+Signed-off-by: sasayaki <91686758+Rarashiken@users.noreply.github.com>
 ---
  dlls/winebus.sys/main.c | 23 +++++++++++++++++++++--
  1 file changed, 21 insertions(+), 2 deletions(-)
