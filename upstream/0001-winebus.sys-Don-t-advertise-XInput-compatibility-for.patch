@@ -6,8 +6,9 @@ Subject: [PATCH 1/2] winebus.sys: Don't advertise XInput compatibility for
 
 On Windows, XInput only supports XUSB devices, i.e. Xbox controllers. A
 DualShock 4 or DualSense is exposed as a plain HID/DirectInput device
-carrying Sony's own vendor and product ID; this is why tools such as ViGEm
-or DS4Windows exist, to present a virtual Xbox pad for XInput-only titles.
+carrying Sony's own vendor and product ID; this is why tools such as
+ViGEm or DS4Windows exist, to present a virtual Xbox pad for XInput-only
+titles.
 
 winebus currently marks every SDL-backed controller as is_gamepad, so
 get_compatible_ids() appends WINEBUS\WINE_COMP_XINPUT and winexinput.sys
@@ -17,9 +18,9 @@ so input libraries route Sony pads through XInput and apply an Xbox 360
 mapping to them, losing the PlayStation button glyphs the application
 would otherwise show.
 
-Skip the XInput compatible ID for DualShock 4 and DualSense, matching what
-Windows reports. Guarded by a registry value so the previous behaviour
-remains available for XInput-only titles:
+Skip the XInput compatible ID for DualShock 4 and DualSense, matching
+what Windows reports. Guarded by a registry value so the previous
+behaviour remains available for XInput-only titles:
 
   HKLM\System\CurrentControlSet\Services\winebus  "Sony XInput" = dword:0
 

@@ -4,18 +4,18 @@ Date: Sun, 20 Sep 2026 03:03:41 +0900
 Subject: [PATCH] winebus.sys: Don't put disallowed characters in device
  instance IDs.
 
-get_instance_id() interpolates desc.serialnumber straight into the device
-instance ID. Backends do not guarantee that string is safe to use there:
-the IOHID backend takes it from kIOHIDSerialNumberKey, which for a
-Bluetooth device is the MAC address with colons, producing
+get_instance_id() interpolates desc.serialnumber straight into the
+device instance ID. Backends do not guarantee that string is safe to use
+there: the IOHID backend takes it from kIOHIDSerialNumberKey, which for
+a Bluetooth device is the MAC address with colons, producing
 
   HID\VID_054C&PID_0DF2\256&E8:47:3A:B4:1C:0B&3AB41C0B&0&0
 
 A device instance ID may not contain < > : " / \ | ? * or control
 characters, so this is malformed. Every input API still reads the device
 correctly, which makes the problem easy to miss, but applications that
-parse or validate device paths can reject it and then behave as though no
-such device is present.
+parse or validate device paths can reject it and then behave as though
+no such device is present.
 
 Replace the disallowed characters when building the instance ID.
 desc.serialnumber itself is left alone, so the HID serial number string

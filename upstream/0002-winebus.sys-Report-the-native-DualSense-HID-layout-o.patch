@@ -7,10 +7,10 @@ Subject: [PATCH 2/2] winebus.sys: Report the native DualSense HID layout on
 Once a Sony pad is no longer advertised as XInput-capable, applications
 identify it by vendor/product ID and parse it with the native DualSense
 element layout. The SDL backend, however, builds a fixed XUSB-shaped
-descriptor via hid_device_add_gamepad(), so the identity is right and the
-data layout is not: face buttons land on the wrong indices, L2 and R2 are
-axes with no digital buttons at all, and the D-pad reports both buttons
-and a hat.
+descriptor via hid_device_add_gamepad(), so the identity is right and
+the data layout is not: face buttons land on the wrong indices, L2 and
+R2 are axes with no digital buttons at all, and the D-pad reports both
+buttons and a hat.
 
 Measured against a DualSense Edge (054c:0df2):
 

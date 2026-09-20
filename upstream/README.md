@@ -11,6 +11,25 @@ are Endfield-specific.
 
 0001 and 0002 belong together. **0003 is independent** and can be submitted on its own.
 
+## Authorship, and the status of these patches upstream
+
+**The code in these patches was written by an AI assistant (Claude), in a session
+where the repository owner identified the problems on real hardware, decided what the
+correct behaviour should be, and tested and verified each iteration.** That division is
+worth stating plainly: the analysis and the measurements are the human contribution, the
+implementation is the model's output.
+
+This matters for upstream submission, because **WineHQ does not accept LLM-generated
+code.** A user-verification issue disclosing this was filed before requesting fork
+privileges, asking whether these patches are unacceptable in any form or whether a
+reimplementation from the problem description would be acceptable. Status: awaiting a
+response.
+
+Until that is answered, these patches live here only. The problem descriptions,
+measurements and reasoning below stand on their own regardless — anyone is free to
+implement the same fixes independently, and the descriptions are written to make that
+possible.
+
 ## How to submit
 
 **Merge requests on <https://gitlab.winehq.org/wine/wine>.** Wine retired the patch tracker and no

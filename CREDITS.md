@@ -54,6 +54,17 @@ The DualSense work leaned on several sources, each of which supplied a piece:
 - **[GNU bison](https://www.gnu.org/software/bison/)** — macOS ships bison 2.3; Wine needs ≥ 3.0.
 - **[SDL](https://github.com/libsdl-org/SDL)** — headers only, to compile `winebus.so` with SDL support.
 
+## How this was built
+
+The work in this repository was done in sessions with an AI assistant (Claude). The
+division of labour: problems were identified on real hardware and every change was
+tested and verified by the repository owner, who also rejected a number of approaches
+that turned out to be wrong; the code and documentation are largely the model's output.
+
+This is stated because it affects what can be done with the work — **WineHQ does not
+accept LLM-generated code**, so the patches in [upstream/](upstream/) have not been
+submitted to Wine on that basis. See [upstream/README.md](upstream/README.md).
+
 ## Not affiliated
 
 This project is not affiliated with or endorsed by Gryphline / Hypergryph, Tencent, CodeWeavers, Apple,
