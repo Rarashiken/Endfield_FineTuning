@@ -57,12 +57,25 @@ the line-number drift between CrossOver releases. Each is idempotent and refuses
 MW=$(ls -d "$S/toolchain"/llvm-mingw-*/ | head -1)
 export PATH="${MW}bin:$S/toolchain/bison-install/bin:$PATH"
 export MACOSX_DEPLOYMENT_TARGET=10.15
-export CFLAGS="-arch x86_64" CXXFLAGS="-arch x86_64" LDFLAGS="-arch x86_64"
 
 mkdir -p build/wine-build64 && cd build/wine-build64
-../wine-src/configure --enable-win64 --disable-tests \
-  --build=x86_64-apple-darwin --host=x86_64-apple-darwin
+../wine-src/configure \
+  --build=x86_64-apple-darwin --host=x86_64-apple-darwin \
+  --enable-archs=x86_64 --disable-tests \
+  --without-x --without-freetype --without-gnutls --without-sdl --without-vulkan \
+  --without-krb5 --without-gstreamer --without-gphoto --without-sane \
+  --without-pcap --without-usb --without-cups \
+  CC=/usr/bin/clang CXX=/usr/bin/clang++ \
+  CFLAGS="-arch x86_64" CXXFLAGS="-arch x86_64" LDFLAGS="-arch x86_64"
 ```
+
+Every one of those `--without-*` is load-bearing: without `--without-freetype` configure stops at
+*"FreeType 64-bit development files not found"*, and the others fail the same way one at a time.
+
+**`CC` must be the system clang.** The Unix side compiles native macOS code; llvm-mingw only builds
+the PE side, and `winebuild` finds it through `PATH`. **`--without-sdl` is deliberate** — `winebus.so`
+is rebuilt separately below with SDL injected, so `config.h` stays untouched and the tree does not
+rebuild.
 
 Two things here are not optional — see [04-pitfalls.md](04-pitfalls.md):
 
@@ -80,9 +93,20 @@ the tree does not rebuild:
 
 ```bash
 rm -f dlls/winebus.sys/bus_sdl.o dlls/winebus.sys/winebus.so
+# Single-quoted: the quotes have to survive shell -> make -> sh before reaching clang.
+# Written with \" inside double quotes they only survive one hop, the macro expands to a bare
+# libSDL2-2.0.0.dylib, and clang reports `invalid suffix '.0.dylib' on floating constant`.
+SDL_DEF='-DSONAME_LIBSDL2=\"libSDL2-2.0.0.dylib\"'
 make dlls/winebus.sys/winebus.so \
-  CFLAGS="-arch x86_64 -I$S/sdl2/include -DHAVE_SDL_H -DSONAME_LIBSDL2=\"libSDL2-2.0.0.dylib\"" \
+  CFLAGS="-arch x86_64 -I$S/sdl2/include -DHAVE_SDL_H $SDL_DEF" \
   LDFLAGS="-arch x86_64 -Wl,-rpath,@loader_path/../lib64 -Wl,-rpath,@loader_path/../../../lib64"
+```
+
+Verify it took, rather than trusting the exit status:
+
+```bash
+strings winebus.so | grep -q libSDL2-2.0.0.dylib   # the SONAME actually made it in
+strings winebus.so | grep -q "SDL support not compiled in" && echo BROKEN
 ```
 
 `-DHAVE_SDL_H` is required as well as `-DSONAME_LIBSDL2`: the `#include <SDL.h>` is guarded by the former.
@@ -164,3 +188,95 @@ any of these happen:
 1. CodeWeavers declares the arm64 build stable;
 2. macOS 28 reaches beta;
 3. someone lands Rosetta fixes for the arm64 path first.
+
+## Building against CrossOver Preview (Wine 11.15)
+
+Preview ships **D3DMetal 4.0b2** where the 26.3 release ships 3.0, so a Preview-based install has
+working DLSS without anyone hand-installing GPTK4. The toolchain is identical — same x86_64, same
+SDL 2.30.12 — but three things differ.
+
+**1. Libraries live in `lib/x86_64/`, not `lib64/`.** That changes the rpaths, and the longer path
+does not fit:
+
+```
+26.3      ntdll.so    @loader_path/../../../lib64
+preview   ntdll.so    @loader_path/../../../lib/x86_64
+26.3      winebus.so  @loader_path/../lib64        + ../../../lib64
+preview   winebus.so  @loader_path/../lib/x86_64   + ../../../lib/x86_64
+```
+
+`install_name_tool -add_rpath` **fails** for the Preview paths — *"larger updated load commands do not
+fit"*, because a Mach-O only reserves so much header padding. It works on 26.3 purely because `lib64`
+is short. **Add the rpath at link time instead:**
+
+```bash
+rm -f dlls/ntdll/ntdll.so
+make dlls/ntdll/ntdll.so LDFLAGS="-arch x86_64 -Wl,-rpath,@loader_path/../../../lib/x86_64"
+```
+
+**2. Two upstream patches must be skipped, not merely allowed to fail.** Wine 11.15 implements
+`KeAcquireGuardedMutex` / `KeReleaseGuardedMutex` itself in `sync.c` (as `FASTCALL`, which is more
+correct than the dw-proton version). Their patches do report failure — but `patch` applies
+**hunk by hunk**: the `.spec` hunk conflicts and leaves a `.rej`, while the `sync.c` hunk goes in
+regardless, and the build then dies on `redefinition of 'KeAcquireGuardedMutex'`.
+
+*A failed patch is not an unapplied patch.* Check what actually landed:
+
+```bash
+grep -cE '^(void|VOID) (WINAPI|FASTCALL) KeAcquireGuardedMutex\(' dlls/ntoskrnl.exe/sync.c   # must be 1
+find . -name '*.rej'
+```
+
+By contrast `0001-macos-rosetta-signal-fixes` fails with **both** hunks rejected, so it writes
+nothing. Same word "failed", opposite consequences — check each one.
+
+**3. Preview has a compile error of its own.** `dlls/winemac.drv/cocoa_app.m` initialises a `static`
+with an Objective-C array literal, which is not a compile-time constant:
+
+```objc
+static NSArray<NSString *> *whitelistedAUMIDs = @[ ... ];   // error
+```
+
+CrossOver 26.3 uses `dispatch_once` in the same place, which is correct; revert to that. This is
+Preview's own regression — it fails with no patches applied at all.
+
+### What still has to be ported by hand
+
+Of upstream's 23 patches, 20 apply cleanly to 11.15. Of the rest:
+
+- The two guarded-mutex ones are obsolete (above).
+- `0001-macos-rosetta-signal-fixes` needs partial porting. CodeWeavers implemented **half of it
+  themselves** — 11.15 has `emulate_nop()` (`CW HACK 27328, 25932, 27266`) for the multi-byte NOP.
+  Theirs only accepts the register forms `0F 1F C0/C1/C2`; widening it to a full modrm decode is
+  worthwhile. The **privileged-instruction half still has to be added**, in `TRAP_x86_PRIVINFLT`
+  after `emulate_nop`:
+
+```c
+rec.ExceptionCode = is_privileged_instr( &context.c );
+if (rec.ExceptionCode) break;
+```
+
+Keep upstream's `CWC-ILLEGAL-INSTR` logging next to it. It exists so an unhandled instruction can be
+read off the byte stream instead of guessed at, and it is exactly what you will want the moment
+something does not start.
+
+### The bottle must be created by Preview
+
+This costs the most time to diagnose, so it goes last and loudest:
+
+**A bottle marked `26.3.0.39832` opened by a `27.0.0` Preview fails silently.** The process exits
+immediately, the log is **zero bytes**, and nothing is printed anywhere.
+
+Create a fresh one with Preview's own `cxbottle`, with the **`win11_64`** template (the default
+`win10_64` does not run the game), then carry over `[EnvironmentVariables]`, the game's settings
+(`Software\Hypergryph\*`), `Software\Wine\Mac Driver`, `Software\Wine\DllOverrides`, and the
+`Services\winebus` section.
+
+If something does not start, the first move is the control experiment — it is the only thing that
+separates "our modules are broken" from "the environment is wrong":
+
+```
+stock Preview  + old bottle   ✗        ← unpatched, fails too => not our modules
+patched Preview + old bottle  ✗
+patched Preview + new bottle  ✓
+```

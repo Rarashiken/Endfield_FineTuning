@@ -22,16 +22,20 @@ enum PatcherCLI {
         let source = URL(fileURLWithPath: arguments[0]).standardizedFileURL
         let destination = URL(fileURLWithPath: arguments[1]).standardizedFileURL
 
-        guard let payloadDir = Payload.directory, Payload.isComplete else {
-            fail("this build of the patcher does not include the Wine module payload")
-            return 1
-        }
         let info = CrossOverInfo(url: source)
         guard info.hasWineModules else {
             fail("\(source.path) does not look like a CrossOver installation")
             return 1
         }
-        print("CrossOver \(info.version ?? "?") at \(source.path)")
+        guard let target = BuildTarget.detect(in: source) else {
+            fail("could not identify the Wine version in \(source.path)")
+            return 1
+        }
+        guard let payloadDir = Payload.directory(for: target) else {
+            fail("this build of the patcher carries no modules for \(target.displayName)")
+            return 1
+        }
+        print("CrossOver \(info.version ?? "?") — \(target.displayName) — at \(source.path)")
         print("     ->  \(destination.path)\n")
 
         let outcome = Outcome()
@@ -39,7 +43,7 @@ enum PatcherCLI {
         Task.detached(priority: .userInitiated) {
             do {
                 try await PatcherEngine.performPatch(source: source, destination: destination,
-                                                     payloadDir: payloadDir) { index, finished in
+                                                     target: target, payloadDir: payloadDir) { index, finished in
                     if !finished {
                         print("  • \(PatcherEngine.stepLabels[index])…")
                         fflush(stdout)

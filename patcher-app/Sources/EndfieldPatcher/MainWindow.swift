@@ -157,12 +157,20 @@ final class MainWindowController: NSWindowController {
         if !info.hasWineModules {
             detailLabel.stringValue = "This does not look like a CrossOver installation (Wine modules not found)."
             detailLabel.textColor = .systemRed
-        } else if !info.isExpectedVersion {
-            detailLabel.stringValue = "Warning: these modules were built for CrossOver \(CrossOverInfo.expectedVersion). Patching a different version is untested and likely to break."
-            detailLabel.textColor = .systemOrange
+        } else if let target = BuildTarget.detect(in: url) {
+            if Payload.directory(for: target) != nil {
+                detailLabel.stringValue = "Recognised as \(target.displayName). Ready — the patched copy is written wherever you choose, and this install is left untouched."
+                detailLabel.textColor = .secondaryLabelColor
+            } else {
+                let have = Payload.availableTargets.map(\.displayName).joined(separator: ", ")
+                detailLabel.stringValue = "Recognised as \(target.displayName), but this patcher carries no modules for it" + (have.isEmpty ? "." : " — only for \(have).")
+                detailLabel.textColor = .systemRed
+            }
         } else {
-            detailLabel.stringValue = "Ready. The patched copy will be created next to your Applications folder."
-            detailLabel.textColor = .secondaryLabelColor
+            // Wine modules are ABI-bound to the Wine they were built from, so an
+            // unrecognised version is a refusal, not a warning.
+            detailLabel.stringValue = "Unrecognised Wine version. This patcher has modules for \(BuildTarget.all.map(\.displayName).joined(separator: " and ")) only; installing them into anything else would crash rather than merely misbehave."
+            detailLabel.textColor = .systemRed
         }
     }
 

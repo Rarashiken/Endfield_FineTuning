@@ -21,6 +21,36 @@ NVEXT="${NVEXT:-0}"   # DXMT 的 NVAPI 扩展;开了 DLSS 选项会出现但选�
 # 下面两个只在 BACKEND=d3dmetal 时有意义 —— DXMT 后端下 D3DMetal 根本没被加载,设了也是空转。
 MTL4="${MTL4:-1}"        # D3DMetal 4.x 的 Metal 4 后端;生效时日志里有 "Enabled MTL4 backend"
 METALFX="${METALFX:-1}"  # D3DMetal 的 MetalFX
+# 性能浮层。需要两个变量配合:
+#   MTL_HUD_ENABLED      —— Apple Metal 的 HUD 本体,FPS/GPU 时间/帧间隔/MetalFX 那些字段都来自它
+#   D3DM_SHOW_HUD_STATS  —— D3DMetal 往那个 HUD 里追加 Dispatch/Draw/Clear Resource 计数
+# 只开后者什么都不会显示(实测)。只在 BACKEND=d3dmetal 下有意义。
+HUD="${HUD:-0}"
+
+# 向游戏谎报显卡型号。终末地用 HGDLSSUtil::IsStreamlineDLSSGSupported 按 GPU 名字判断
+# 能不能开帧生成,并排除 RTX 20/30 系(没有 Ada 的光流加速器)。看到不是 N 卡就直接
+# 不显示那个选项 —— 这一层 D3DMetal 管不到,只能改它上报的 adapter 信息。
+# DLSS 超分不需要这个(NGX 接口由 D3DMetal 顶着),只有帧生成的菜单项需要。
+# GPUSPOOF=0 关闭;=1 用默认型号;也可以直接给型号,如 GPUSPOOF="RTX 4060"。
+# 约束只有三条:NVIDIA、40 系(DLSS-G 需要 Ada 的光流加速器)、不在游戏的排除表里
+# (RTX 20 / RTX 2050 / RTX 30 / RTX 3050 Laptop / RTX 3050 Ti Laptop)。
+# 只报名字不报 device id:排除表是按字符串比的,多报一个没核对过的 id 反而可能帮倒忙。
+GPUSPOOF="${GPUSPOOF:-0}"
+case "$GPUSPOOF" in
+  0|"")  SPOOF_VENDOR=""; SPOOF_DEVICE=""; SPOOF_DESC="" ;;
+  1)     SPOOF_VENDOR="0x10DE"; SPOOF_DEVICE=""; SPOOF_DESC="NVIDIA GeForce RTX 4070" ;;
+  *)     SPOOF_VENDOR="0x10DE"; SPOOF_DEVICE=""
+         case "$GPUSPOOF" in
+           NVIDIA*) SPOOF_DESC="$GPUSPOOF" ;;
+           *)       SPOOF_DESC="NVIDIA GeForce $GPUSPOOF" ;;
+         esac ;;
+esac
+if [ -n "$SPOOF_DESC" ]; then
+  case "$SPOOF_DESC" in
+    *"RTX 20"*|*"RTX 30"*)
+      echo "警告: $SPOOF_DESC 在游戏的 DLSS-G 排除表里,帧生成选项不会出现" >&2 ;;
+  esac
+fi
 # 渲染 API。游戏同时支持 Vulkan 和 DX11,Unity 默认选 Vulkan。
 # Vulkan 走 MoltenVK,实测不可用(Retina 下过曝白屏、关 Retina 后进游戏黑屏、
 # PSO 缓存从不落盘、且没有 DLSS)—— 见 docs/02-graphics-and-stability.md。
@@ -48,17 +78,33 @@ kill_wineserver() {
 
 kill_wineserver
 # 写入选定的后端
-if ! /usr/bin/python3 - "$CONF" "$BACKEND" "$MSYNC" "$NVEXT" "$MTL4" "$METALFX" <<'PY'
+if ! /usr/bin/python3 - "$CONF" "$BACKEND" "$MSYNC" "$NVEXT" "$MTL4" "$METALFX" "$HUD" \
+     "$SPOOF_VENDOR" "$SPOOF_DEVICE" "$SPOOF_DESC" <<'PY'
 import sys,re
-p,b,m,nv,m4,mfx=sys.argv[1:7]
+p,b,m,nv,m4,mfx,hud,sv,sd,sdesc=sys.argv[1:11]
 s=open(p,encoding='utf-8').read()
-s,n1=re.subn(r'"CX_GRAPHICS_BACKEND" = "[^"]*"', f'"CX_GRAPHICS_BACKEND" = "{b}"', s)
-s,n2=re.subn(r'"WINEMSYNC" = "[^"]*"',          f'"WINEMSYNC" = "{m}"',          s)
-s,n3=re.subn(r'"DXMT_ENABLE_NVEXT" = "[^"]*"',  f'"DXMT_ENABLE_NVEXT" = "{nv}"',  s)
-s,n4=re.subn(r'"D3DM_MTL4" = "[^"]*"',          f'"D3DM_MTL4" = "{m4}"',          s)
-s,n5=re.subn(r'"D3DM_ENABLE_METALFX" = "[^"]*"', f'"D3DM_ENABLE_METALFX" = "{mfx}"', s)
-if n1 != 1 or n2 != 1 or n3 != 1 or n4 != 1 or n5 != 1:
-    sys.exit(f"cxbottle.conf 未按预期替换: BACKEND={n1} MSYNC={n2} NVEXT={n3} MTL4={n4} METALFX={n5}")
+
+def set_env(s, key, value):
+    """存在就替换,不存在就插进 [EnvironmentVariables] 段。
+    早先只做替换,于是任何新建的容器都会因为缺键而在回读验证处中止。"""
+    hit = re.subn(rf'"{key}" = "[^"]*"', f'"{key}" = "{value}"', s)
+    if hit[1] == 1: return hit[0]
+    if hit[1] > 1: sys.exit(f"cxbottle.conf 里 {key} 出现 {hit[1]} 次,不敢改")
+    m = re.search(r'\[EnvironmentVariables\]', s)
+    if not m: sys.exit("cxbottle.conf 里没有 [EnvironmentVariables] 段")
+    return s[:m.end()] + f'\n"{key}" = "{value}"' + s[m.end():]
+
+for k, v in (("CX_GRAPHICS_BACKEND", b), ("WINEMSYNC", m), ("DXMT_ENABLE_NVEXT", nv),
+             ("D3DM_MTL4", m4), ("D3DM_ENABLE_METALFX", mfx),
+             ("D3DM_SHOW_HUD_STATS", hud), ("MTL_HUD_ENABLED", hud)):
+    s = set_env(s, k, v)
+
+def drop_env(s, key):
+    """整行删掉 —— 伪装关掉时必须真的消失,留一个空值会被当成有效的 adapter 信息。"""
+    return re.sub(rf'^"{key}" = "[^"]*"\n', '', s, flags=re.M)
+
+for k, v in (("D3DM_VENDOR_ID", sv), ("D3DM_DEVICE_ID", sd), ("D3DM_DEVICE_DESCRIPTION", sdesc)):
+    s = set_env(s, k, v) if v else drop_env(s, k)
 open(p,'w',encoding='utf-8').write(s)
 PY
 then
@@ -70,8 +116,10 @@ GOT_M=$(/usr/bin/grep -o '"WINEMSYNC" = "[^"]*"'          "$CONF" | head -1 | /u
 GOT_N=$(/usr/bin/grep -o '"DXMT_ENABLE_NVEXT" = "[^"]*"'  "$CONF" | head -1 | /usr/bin/sed 's/.*= "//;s/"//')
 GOT_M4=$(/usr/bin/grep -o '"D3DM_MTL4" = "[^"]*"'         "$CONF" | head -1 | /usr/bin/sed 's/.*= "//;s/"//')
 GOT_FX=$(/usr/bin/grep -o '"D3DM_ENABLE_METALFX" = "[^"]*"' "$CONF" | head -1 | /usr/bin/sed 's/.*= "//;s/"//')
+GOT_HUD=$(/usr/bin/grep -o '"D3DM_SHOW_HUD_STATS" = "[^"]*"' "$CONF" | head -1 | /usr/bin/sed 's/.*= "//;s/"//')
+GOT_MHUD=$(/usr/bin/grep -o '"MTL_HUD_ENABLED" = "[^"]*"' "$CONF" | head -1 | /usr/bin/sed 's/.*= "//;s/"//')
 if [ "$GOT_B" != "$BACKEND" ] || [ "$GOT_M" != "$MSYNC" ] || [ "$GOT_N" != "$NVEXT" ] \
-   || [ "$GOT_M4" != "$MTL4" ] || [ "$GOT_FX" != "$METALFX" ]; then
+   || [ "$GOT_M4" != "$MTL4" ] || [ "$GOT_FX" != "$METALFX" ] || [ "$GOT_HUD" != "$HUD" ] || [ "$GOT_MHUD" != "$HUD" ]; then
   echo "错误: 期望 后端=$BACKEND msync=$MSYNC nvext=$NVEXT mtl4=$MTL4 metalfx=$METALFX," >&2
   echo "      实际 $GOT_B / $GOT_M / $GOT_N / $GOT_M4 / $GOT_FX,已中止" >&2; exit 1
 fi

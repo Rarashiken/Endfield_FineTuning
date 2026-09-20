@@ -4,14 +4,19 @@ A small macOS app that turns a copy of **CrossOver 26.3.0** into the patched bui
 **Arknights: Endfield** on Apple Silicon — and that shows a DualSense as a DualSense. It is the
 GUI equivalent of [`scripts/swap-built-modules.sh`](../scripts/swap-built-modules.sh):
 
-1. Copies your `CrossOver.app` with `ditto`. **The original is never touched.**
-2. Installs the five pre-built patched Wine modules bundled inside the app
+1. Identifies which CrossOver it is, by reading the Wine version string out of the target's own
+   `ntdll.so` — not `CFBundleShortVersionString`, because releases version as `26.3` while Preview
+   versions by date (`20260821`), and because the Wine version is what actually decides ABI
+   compatibility. An unrecognised version is **refused**, not warned about: Wine modules built
+   against a different Wine crash rather than merely misbehave.
+2. Copies your `CrossOver.app` with `ditto`. **The original is never touched.**
+3. Installs the five pre-built patched Wine modules for that flavour
    (`ntdll.so`, `winebus.so`, `winebus.sys`, `ntoskrnl.exe`, `kernel32.dll`).
-3. Gives the copy its own `CFBundleIdentifier`, so LaunchServices can tell the two apps apart.
-4. **Re-signs** the whole bundle ad-hoc, carrying the original entitlements over, and clears
+4. Gives the copy its own `CFBundleIdentifier`, so LaunchServices can tell the two apps apart.
+5. **Re-signs** the whole bundle ad-hoc, carrying the original entitlements over, and clears
    quarantine.
-5. Verifies the result: module sizes, `codesign --verify` on `ntdll.so` and `winebus.so`, and the
-   `lib64` rpaths that D3DMetal and the SDL controller backend need.
+6. Verifies the result: module sizes, `codesign --verify` on `ntdll.so` and `winebus.so`, and the
+   rpaths that D3DMetal and the SDL controller backend need — which differ per flavour.
 
 Steps 3 and 4 are where this differs from [crossover-patcher](https://github.com/dazi2011/crossover-patcher),
 which strips `_CodeSignature/` instead. Stripping the seal leaves an invalid signature, and recent
@@ -37,6 +42,22 @@ testing a build without clicking through the window:
     --patch /Applications/CrossOver.app /Applications/CrossOver-Endfield.app
 ```
 
+## Two payloads, one app
+
+Wine modules are ABI-bound to the Wine they were compiled from, so the app carries one payload per
+CrossOver flavour and picks by what it finds in the target:
+
+| | Wine | Libraries in | rpaths baked into the payload |
+|---|---|---|---|
+| CrossOver 26.3 | 11.0 | `lib64/` | `@loader_path/../../../lib64` (+ `../lib64` for winebus) |
+| CrossOver Preview 20260821 | 11.15 | `lib/x86_64/` | `@loader_path/../../../lib/x86_64` (+ `../lib/x86_64`) |
+
+Preview is worth supporting because it ships **D3DMetal 4.0b2** where 26.3 ships 3.0 — so a
+Preview-based install has working DLSS without anyone hand-installing Apple's GPTK4, which cannot be
+redistributed. Note that Preview also needs its **own bottle**: a bottle created by 26.3 fails
+*silently* under Preview (zero-byte log, no error at all). See
+[docs/01-build-environment.md](../docs/01-build-environment.md).
+
 ## Building the app
 
 Requires the Xcode Command Line Tools only — **no Xcode**. (That constraint is why the UI is
@@ -51,9 +72,16 @@ PAYLOAD_DIR=/path/to/wine-build64 ./patcher-app/scripts/build-app.sh
 open "patcher-app/build/Endfield Patcher.app"
 ```
 
-`PAYLOAD_DIR` overrides where the modules come from (either a `build/wine-build64` tree or a flat
-directory containing the five files). `CODESIGN_ID` sets a real signing identity (default: ad-hoc).
-`ALLOW_MISSING_PAYLOAD=1` produces a payload-less smoke-test build that refuses to patch.
+```bash
+PAYLOAD_DIR_RELEASE=/path/to/26.3/wine-build64 \
+PAYLOAD_DIR_PREVIEW=/path/to/11.15/wine-build64 \
+  ./patcher-app/scripts/build-app.sh
+```
+
+Either may be omitted — the app then simply refuses the flavour it has no modules for, naming what it
+does carry. `PAYLOAD_DIR` is accepted as an alias for `PAYLOAD_DIR_RELEASE`. `CODESIGN_ID` sets a real
+signing identity (default: ad-hoc). `ALLOW_MISSING_PAYLOAD=1` produces a payload-less smoke-test build
+that refuses to patch.
 
 ### App icon
 

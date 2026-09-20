@@ -103,6 +103,70 @@ D3DMetal 4.0b2 comes from **Apple's Game Porting Toolkit 4**, which may not be r
 to be installed by hand over `lib64/apple_gptk/external/`. Anything built from this repository, the
 patcher app included, ships with whatever D3DMetal your CrossOver came with — 3.0 for CrossOver 26.3.
 
+## Frame generation and Metal 4: both out of reach, for the same reason
+
+Neither can be used here, and it is not a configuration problem — **they are both D3D12 features, and
+this game is D3D11** (`force-d3d12` appears 0 times in `UnityPlayer.dll`).
+
+**Metal 4 backend.** `D3DM_MTL4=1` never engages; the launcher greps each run's log for
+`Enabled MTL4 backend` and reports its absence. The symbols say why:
+
+```
+D3D12.*MTL4   4   (ID3D12GraphicsCommandListMTL4::…)
+D3D11.*MTL4   0
+```
+
+**DLSS frame generation.** The game's menu has no such option. It is not a GPU-detection problem,
+although it looks like one: `UnityPlayer.dll` contains
+`HGDLSSUtil::IsStreamlineDLSSGSupported` with an exclusion list of
+`RTX 20 / RTX 2050 / RTX 30 / RTX 3050 Laptop / RTX 3050 Ti Laptop`, which invites the idea of
+reporting a different adapter. That was tried:
+
+```
+D3DM_VENDOR_ID = 0x10DE
+D3DM_DEVICE_DESCRIPTION = "NVIDIA GeForce RTX 4070"
+```
+
+**The option still did not appear, and the frame rate dropped from ~55 to ~40.** Spoofing makes the
+game take NVIDIA-specific paths (Reflex enhancements and similar) that D3DMetal only emulates, so it
+costs performance and buys nothing. The launcher's `GPUSPOOF` defaults to off; it is kept only so the
+experiment does not have to be redone.
+
+The real reason is that **DLSS frame generation requires DirectX 12 or Vulkan — D3D11 is not
+supported**, which is an NVIDIA architectural limit rather than anything missing on the Metal side.
+D3DMetal's implementation is complete: 47 `DLSSG.*` parameters plus `newFrameInterpolatorWithDevice:`.
+Any screenshot showing a working `Frame Interpolator` row is from a D3D12 title.
+
+DLSS **upscaling** is unaffected and does work, because it has a D3D11 path — that is what
+`Scaling Input Res` / `Scaling Target Res` in the HUD are showing.
+
+## The performance HUD
+
+Two variables, and only one of them does nothing on its own:
+
+```
+"MTL_HUD_ENABLED"     = "1"   Apple's Metal HUD itself — FPS, GPU time, frame interval, MetalFX rows
+"D3DM_SHOW_HUD_STATS" = "1"   D3DMetal appends its own Dispatch / Draw / Clear Resource counters
+```
+
+Setting only the second displays nothing at all: the fields it seems to promise (`Frame Interval`,
+`Scaling Input Res`, `Frame Interpolator`) do not exist anywhere in the D3DMetal binary — they belong
+to the Metal HUD. `HUD=1` in the launcher sets both.
+
+Worth knowing what it can and cannot tell you: `GPU` reads `0.00ms` whenever D3DMetal cannot service
+`D3D11 timestamp query`, which is also logged as `Unsupported: D3D11 timestamp query`. When it does
+report, the numbers are informative — measured at full resolution:
+
+```
+Frame Interval  32.50ms   (30.77 FPS)
+GPU             13.90ms
+                18.60ms   unaccounted for — CPU side
+```
+
+Under half a frame is GPU work. The rest is game logic plus Rosetta plus D3D11→Metal translation,
+which means settings that cost CPU (vegetation density, shadows) can buy more than lowering
+resolution does.
+
 ## Vulkan: it initialises now, but it is not usable
 
 The game supports both Vulkan and D3D11, and Unity picks Vulkan by default — which on Windows is
@@ -142,8 +206,19 @@ Why it is not usable:
    `vulkan_pso_cache.bin` is never created, so every launch recompiles every shader. For contrast,
    `dx11_pso_cache.bin` is 65 bytes — under D3D11 the shaders are managed by D3DMetal/DXMT instead.
    MoltenVK has no disk cache of its own; it relies entirely on that Unity file.
-4. **No DLSS on Vulkan, ever.** The Streamline plugins (`sl.dlss.dll` and friends) only have
-   D3D11/D3D12 backends, and the NGX implementation underneath them comes from D3DMetal.
+4. **No DLSS on Vulkan at all** — not upscaling, not frame generation. The NGX implementation comes
+   from D3DMetal, which only serves D3D; Vulkan goes through MoltenVK, where there is no NGX. The
+   logs show it plainly:
+
+   ```
+   D3D11:   [streamline][error] ota.cpp:221 NGX Updater not available   <- Streamline loaded
+   Vulkan:  [Error] Failed to initialize streamline (eErrorNoPlugins)   <- never got off the ground
+   ```
+
+   This matters beyond upscaling: DLSS frame generation is supported on D3D12 **and Vulkan**, so
+   Vulkan looks like a way to reach it. It is not — that error is Streamline saying there is nothing
+   to load. (This line was first misread as the cause of the white screen; switching the game to TAAU
+   disproved that, since it kept appearing.)
 
 The root cause is simply that Unity has never supported Vulkan on macOS, and
 `Windows game → Wine → MoltenVK → Metal` is a path nobody tests. Use `GFXAPI=vulkan` in the launcher

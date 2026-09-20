@@ -7,7 +7,9 @@
 #
 # Usage:  patcher-app/scripts/build-app.sh
 # Env:
-#   PAYLOAD_DIR             where to find the built modules
+#   PAYLOAD_DIR_RELEASE     modules built against CrossOver 26.3   (Wine 11.0)
+#   PAYLOAD_DIR_PREVIEW     modules built against Preview 20260821 (Wine 11.15)
+#   PAYLOAD_DIR             alias for PAYLOAD_DIR_RELEASE
 #                           (default: <repo>/build/wine-build64, the build-wine.sh output tree;
 #                            a flat directory holding ntdll.so/kernel32.dll/ntoskrnl.exe also works)
 #   CODESIGN_ID             signing identity (default "-" = ad-hoc; set your "Developer ID
@@ -22,7 +24,6 @@ APP_NAME="Endfield Patcher"
 EXE="EndfieldPatcher"
 BUNDLE_ID="io.github.Rarashiken.EndfieldPatcher"
 VERSION="1.0.0"
-PAYLOAD_DIR="${PAYLOAD_DIR:-$REPO/build/wine-build64}"
 CODESIGN_ID="${CODESIGN_ID:--}"
 OUT="$HERE/build"
 APP="$OUT/$APP_NAME.app"
@@ -95,66 +96,95 @@ plutil -lint -s "$APP/Contents/Info.plist"
 ok "bundle skeleton + Info.plist"
 
 # ---------------------------------------------------------------- 3. payload
-log "Staging the pre-built Wine modules (payload) from $PAYLOAD_DIR"
-find_module(){ # flat-name  tree-relative-path
-  if   [ -f "$PAYLOAD_DIR/$2" ]; then echo "$PAYLOAD_DIR/$2"
-  elif [ -f "$PAYLOAD_DIR/$1" ]; then echo "$PAYLOAD_DIR/$1"
-  else echo ""; fi
-}
-NTDLL="$(find_module ntdll.so dlls/ntdll/ntdll.so)"
-KERNEL32="$(find_module kernel32.dll dlls/kernel32/x86_64-windows/kernel32.dll)"
-NTOSKRNL="$(find_module ntoskrnl.exe dlls/ntoskrnl.exe/x86_64-windows/ntoskrnl.exe)"
-WINEBUS_SO="$(find_module winebus.so dlls/winebus.sys/winebus.so)"
-WINEBUS_SYS="$(find_module winebus.sys dlls/winebus.sys/x86_64-windows/winebus.sys)"
+#
+# Two payloads, one per CrossOver flavour. Wine modules are ABI-bound to the Wine
+# they were built from, so the patcher picks by the Wine version it finds in the
+# target's own ntdll.so; installing the wrong one crashes rather than degrades.
+#
+#   PAYLOAD_DIR_RELEASE   modules built against CrossOver 26.3   (Wine 11.0,  libs in lib64/)
+#   PAYLOAD_DIR_PREVIEW   modules built against Preview 20260821 (Wine 11.15, libs in lib/x86_64/)
+#
+# At least one must be present. PAYLOAD_DIR is accepted as an alias for the release one.
+PAYLOAD_DIR_RELEASE="${PAYLOAD_DIR_RELEASE:-${PAYLOAD_DIR:-$REPO/build/wine-build64}}"
+PAYLOAD_DIR_PREVIEW="${PAYLOAD_DIR_PREVIEW:-}"
 
-if [ -z "$NTDLL" ] || [ -z "$KERNEL32" ] || [ -z "$NTOSKRNL" ] || [ -z "$WINEBUS_SO" ] || [ -z "$WINEBUS_SYS" ]; then
-  if [ "${ALLOW_MISSING_PAYLOAD:-0}" = "1" ]; then
-    warn "payload modules not found — building WITHOUT payload (smoke test only)"
-  else
-    echo "ERROR: payload modules not found under $PAYLOAD_DIR"
-    echo "       Run scripts/build-wine.sh all first (or set PAYLOAD_DIR)."
-    exit 1
+stage_payload(){ # 1=label  2=source dir  3=payload subdir  4=rpath suffix (lib64 | lib/x86_64)
+  local label="$1" dir="$2" sub="$3" libdir="$4"
+  local P="$APP/Contents/Resources/payload/$sub"
+
+  find_module(){ # flat-name  tree-relative-path
+    if   [ -f "$dir/$2" ]; then echo "$dir/$2"
+    elif [ -f "$dir/$1" ]; then echo "$dir/$1"
+    else echo ""; fi
+  }
+  local NTDLL KERNEL32 NTOSKRNL WINEBUS_SO WINEBUS_SYS
+  NTDLL="$(find_module ntdll.so dlls/ntdll/ntdll.so)"
+  KERNEL32="$(find_module kernel32.dll dlls/kernel32/x86_64-windows/kernel32.dll)"
+  NTOSKRNL="$(find_module ntoskrnl.exe dlls/ntoskrnl.exe/x86_64-windows/ntoskrnl.exe)"
+  WINEBUS_SO="$(find_module winebus.so dlls/winebus.sys/winebus.so)"
+  WINEBUS_SYS="$(find_module winebus.sys dlls/winebus.sys/x86_64-windows/winebus.sys)"
+  if [ -z "$NTDLL" ] || [ -z "$KERNEL32" ] || [ -z "$NTOSKRNL" ] || [ -z "$WINEBUS_SO" ] || [ -z "$WINEBUS_SYS" ]; then
+    return 1
   fi
-else
-  P="$APP/Contents/Resources/payload"
-  cp "$NTDLL"    "$P/x86_64-unix/ntdll.so"
-  cp "$KERNEL32" "$P/x86_64-windows/kernel32.dll"
-  cp "$NTOSKRNL" "$P/x86_64-windows/ntoskrnl.exe"
+
+  mkdir -p "$P/x86_64-unix" "$P/x86_64-windows"
+  cp "$NTDLL"       "$P/x86_64-unix/ntdll.so"
+  cp "$KERNEL32"    "$P/x86_64-windows/kernel32.dll"
+  cp "$NTOSKRNL"    "$P/x86_64-windows/ntoskrnl.exe"
   cp "$WINEBUS_SO"  "$P/x86_64-unix/winebus.so"
   cp "$WINEBUS_SYS" "$P/x86_64-windows/winebus.sys"
 
-  # Pre-add the lib64 rpath to ntdll.so HERE, at app-build time, so end users of the
-  # patcher never need Xcode tools installed. CrossOver's ntdll dlopens cxcompatdb.so,
-  # which resolves @rpath/libgnutls through ntdll.so's own LC_RPATH — without this
-  # rpath D3DMetal never engages (see scripts/swap-into-crossover.sh).
-  NT="$P/x86_64-unix/ntdll.so"
-  if otool -l "$NT" >/dev/null 2>&1; then
-    if ! otool -l "$NT" | grep -A2 LC_RPATH | grep -q 'lib64'; then
-      install_name_tool -add_rpath "@loader_path/../../../lib64" "$NT"
+  # rpaths are added HERE, at app-build time, so patcher users never need Xcode tools.
+  # ntdll.so: CrossOver's ntdll dlopens cxcompatdb.so, which resolves @rpath/... through
+  # ntdll.so's own LC_RPATH — miss it and D3DMetal never engages.
+  # winebus.so: it dlopens libSDL2 by leaf name — miss it and the SDL backend fails
+  # silently, meaning no controller at all.
+  local NT="$P/x86_64-unix/ntdll.so" WB="$P/x86_64-unix/winebus.so"
+  if ! otool -l "$NT" >/dev/null 2>&1; then
+    if [ "${ALLOW_MISSING_PAYLOAD:-0}" = "1" ]; then
+      warn "$label: ntdll.so is not a Mach-O (dummy payload?) — skipping rpaths"; return 0
     fi
-    otool -l "$NT" | grep -A2 LC_RPATH | grep -q 'lib64' \
-      || { echo "ERROR: could not add the lib64 rpath to ntdll.so"; exit 1; }
-    ok "ntdll.so LC_RPATH → lib64 (required for D3DMetal)"
-
-    # Same story for winebus.so: it dlopens libSDL2 by leaf name out of lib64.
-    WB="$P/x86_64-unix/winebus.so"
-    for rp in "@loader_path/../lib64" "@loader_path/../../../lib64"; do
-      otool -l "$WB" | grep -A2 LC_RPATH | grep -qF "$rp" || install_name_tool -add_rpath "$rp" "$WB"
-      otool -l "$WB" | grep -A2 LC_RPATH | grep -qF "$rp" \
-        || { echo "ERROR: could not add rpath $rp to winebus.so"; exit 1; }
-    done
-    ok "winebus.so LC_RPATH → lib64 (required for the SDL controller backend)"
-  elif [ "${ALLOW_MISSING_PAYLOAD:-0}" = "1" ]; then
-    warn "ntdll.so is not a Mach-O (dummy payload?) — skipping the rpath step"
-  else
     echo "ERROR: $NTDLL is not a Mach-O binary"; exit 1
   fi
+  local rp
+  for rp in "@loader_path/../../../$libdir"; do
+    otool -l "$NT" | grep -A2 LC_RPATH | grep -qF "$rp" || install_name_tool -add_rpath "$rp" "$NT"
+    otool -l "$NT" | grep -A2 LC_RPATH | grep -qF "$rp" \
+      || { echo "ERROR: could not add rpath $rp to ntdll.so ($label)"; exit 1; }
+  done
+  for rp in "@loader_path/../$libdir" "@loader_path/../../../$libdir"; do
+    otool -l "$WB" | grep -A2 LC_RPATH | grep -qF "$rp" || install_name_tool -add_rpath "$rp" "$WB"
+    otool -l "$WB" | grep -A2 LC_RPATH | grep -qF "$rp" \
+      || { echo "ERROR: could not add rpath $rp to winebus.so ($label)"; exit 1; }
+  done
 
+  local f
   for f in "$P/x86_64-unix/ntdll.so" "$P/x86_64-windows/kernel32.dll" "$P/x86_64-windows/ntoskrnl.exe" \
            "$P/x86_64-unix/winebus.so" "$P/x86_64-windows/winebus.sys"; do
     codesign --force --sign "$CODESIGN_ID" "$f" 2>/dev/null || true
   done
-  ok "payload staged: ntdll.so, kernel32.dll, ntoskrnl.exe, winebus.so, winebus.sys"
+  ok "$label: 5 modules staged, rpaths → $libdir"
+  return 0
+}
+
+log "Staging payloads"
+rm -rf "$APP/Contents/Resources/payload"
+STAGED=0
+if stage_payload "CrossOver 26.3" "$PAYLOAD_DIR_RELEASE" "release" "lib64"; then
+  STAGED=$((STAGED+1))
+else
+  warn "no modules under PAYLOAD_DIR_RELEASE ($PAYLOAD_DIR_RELEASE)"
+fi
+if [ -n "$PAYLOAD_DIR_PREVIEW" ]; then
+  if stage_payload "CrossOver Preview" "$PAYLOAD_DIR_PREVIEW" "preview" "lib/x86_64"; then
+    STAGED=$((STAGED+1))
+  else
+    warn "no modules under PAYLOAD_DIR_PREVIEW ($PAYLOAD_DIR_PREVIEW)"
+  fi
+fi
+if [ "$STAGED" = 0 ] && [ "${ALLOW_MISSING_PAYLOAD:-0}" != "1" ]; then
+  echo "ERROR: no payload staged. Set PAYLOAD_DIR_RELEASE and/or PAYLOAD_DIR_PREVIEW."
+  exit 1
 fi
 
 # ---------------------------------------------------------------- 4. sign

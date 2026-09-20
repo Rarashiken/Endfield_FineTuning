@@ -13,6 +13,56 @@ struct PayloadModule {
     let crossoverSubpath: String  // relative to Contents/SharedSupport/CrossOver/
 }
 
+/// A CrossOver flavour and the payload built against it.
+///
+/// Wine modules are ABI-bound to the Wine they were compiled from, so installing
+/// the 11.0 payload into an 11.15 CrossOver (or the reverse) does not degrade —
+/// it crashes. The two flavours also lay out their libraries differently, which
+/// changes the rpaths the modules have to carry.
+struct BuildTarget {
+    let id: String
+    let displayName: String
+    /// Matched against the Wine version string inside the target's own ntdll.so.
+    /// This is used rather than CFBundleShortVersionString because it is what
+    /// actually determines compatibility, and because Preview versions itself by
+    /// date (20260821) while releases use 26.3 — one rule cannot cover both.
+    let wineVersionPrefix: String
+    /// Subdirectory under Resources/payload/ holding this flavour's modules.
+    let payloadSubdir: String
+    let ntdllRpath: String
+    let winebusRpaths: [String]
+
+    static let release = BuildTarget(
+        id: "release",
+        displayName: "CrossOver 26.3",
+        wineVersionPrefix: "wine-11.0-",
+        payloadSubdir: "release",
+        ntdllRpath: "@loader_path/../../../lib64",
+        winebusRpaths: ["@loader_path/../lib64", "@loader_path/../../../lib64"])
+
+    static let preview = BuildTarget(
+        id: "preview",
+        displayName: "CrossOver Preview 20260821",
+        wineVersionPrefix: "wine-11.15-",
+        payloadSubdir: "preview",
+        ntdllRpath: "@loader_path/../../../lib/x86_64",
+        winebusRpaths: ["@loader_path/../lib/x86_64", "@loader_path/../../../lib/x86_64"])
+
+    static let all = [release, preview]
+
+    /// Identify a CrossOver.app by the Wine version its own ntdll.so reports.
+    static func detect(in app: URL) -> BuildTarget? {
+        let ntdll = app.appendingPathComponent(
+            "Contents/SharedSupport/CrossOver/lib/wine/x86_64-unix/ntdll.so")
+        guard let data = try? Data(contentsOf: ntdll, options: .alwaysMapped) else { return nil }
+        for target in all {
+            guard let needle = target.wineVersionPrefix.data(using: .utf8) else { continue }
+            if data.range(of: needle) != nil { return target }
+        }
+        return nil
+    }
+}
+
 enum Payload {
     static let modules: [PayloadModule] = [
         // Rosetta NOP + privileged-instruction fixes, NtDelayExecution QPC timing
@@ -32,20 +82,10 @@ enum Payload {
                       crossoverSubpath: "lib/wine/x86_64-windows/winebus.sys"),
     ]
 
-    /// The rpath the payload ntdll.so must carry so CrossOver's cxcompatdb.so
-    /// (and through it D3DMetal) keeps working. Added at app-build time by
-    /// scripts/build-app.sh so end users never need Xcode tools.
-    static let requiredNtdllRpath = "@loader_path/../../../lib64"
-
-    /// winebus.so dlopens libSDL2 from CrossOver's lib64; without these rpaths the
-    /// SDL backend silently fails and no controller appears. Also baked in at
-    /// app-build time.
-    static let requiredWinebusRpaths = ["@loader_path/../lib64", "@loader_path/../../../lib64"]
-
-    /// Directory containing the bundled pre-built modules.
-    /// FINETUNING_PAYLOAD_DIR overrides it for development (`swift run`).
-    static var directory: URL? {
-        if let override = ProcessInfo.processInfo.environment["FINETUNING_PAYLOAD_DIR"] {
+    /// Root of the bundled payloads; each BuildTarget has a subdirectory under it.
+    /// ENDFIELD_PAYLOAD_DIR overrides it for development (`swift run`).
+    static var root: URL? {
+        if let override = ProcessInfo.processInfo.environment["ENDFIELD_PAYLOAD_DIR"] {
             let url = URL(fileURLWithPath: override, isDirectory: true)
             if FileManager.default.fileExists(atPath: url.path) { return url }
         }
@@ -54,24 +94,30 @@ enum Payload {
         return FileManager.default.fileExists(atPath: url.path) ? url : nil
     }
 
-    static var isComplete: Bool {
-        guard let dir = directory else { return false }
-        return modules.allSatisfy {
+    /// The payload directory for one target, or nil if this build does not carry it.
+    static func directory(for target: BuildTarget) -> URL? {
+        guard let root else { return nil }
+        let dir = root.appendingPathComponent(target.payloadSubdir, isDirectory: true)
+        guard modules.allSatisfy({
             FileManager.default.fileExists(atPath: dir.appendingPathComponent($0.payloadSubpath).path)
-        }
+        }) else { return nil }
+        return dir
+    }
+
+    /// Targets this build of the patcher can actually handle.
+    static var availableTargets: [BuildTarget] {
+        BuildTarget.all.filter { directory(for: $0) != nil }
     }
 }
 
 /// What we know about a selected CrossOver.app.
 struct CrossOverInfo {
-    static let expectedVersion = "26.3"
 
     let url: URL
     let version: String?
     let bundleIdentifier: String?
     let hasWineModules: Bool
 
-    var isExpectedVersion: Bool { version?.hasPrefix(Self.expectedVersion) == true }
     var displayName: String { url.deletingPathExtension().lastPathComponent }
 
     init(url: URL) {
@@ -133,8 +179,13 @@ final class PatcherEngine {
 
     func patch(source: URL, destination: URL) {
         guard !isRunning else { return }
-        guard let payloadDir = Payload.directory, Payload.isComplete else {
-            errorMessage = "This build of the patcher does not include the Wine module payload. Rebuild it with patcher-app/scripts/build-app.sh after scripts/build-wine.sh all."
+        guard let target = BuildTarget.detect(in: source) else {
+            errorMessage = "Could not tell which CrossOver this is. Its ntdll.so does not report a Wine version this patcher has modules for (\(BuildTarget.all.map(\.displayName).joined(separator: ", ")))."
+            return
+        }
+        guard let payloadDir = Payload.directory(for: target) else {
+            let have = Payload.availableTargets.map(\.displayName).joined(separator: ", ")
+            errorMessage = "This build of the patcher has no modules for \(target.displayName)." + (have.isEmpty ? " It carries no payload at all — rebuild it with patcher-app/scripts/build-app.sh." : " It only carries: \(have).")
             return
         }
         reset()
@@ -145,7 +196,7 @@ final class PatcherEngine {
             let current = Counter()
             do {
                 try await Self.performPatch(source: source, destination: destination,
-                                            payloadDir: payloadDir) { index, finished in
+                                            target: target, payloadDir: payloadDir) { index, finished in
                     if !finished { current.value = index }
                     await MainActor.run { self.steps[index].status = finished ? .done : .running }
                 }
@@ -170,14 +221,15 @@ final class PatcherEngine {
     /// go through here, so what gets tested on the command line is exactly what
     /// runs when the button is pressed. `progress` is called with the step index
     /// and false before a step, true after it.
-    nonisolated static func performPatch(source: URL, destination: URL, payloadDir: URL,
+    nonisolated static func performPatch(source: URL, destination: URL,
+                                         target: BuildTarget, payloadDir: URL,
                                          progress: (Int, Bool) async -> Void) async throws {
         let stages: [() throws -> Void] = [
             { try copyBundle(from: source, to: destination) },
             { try installModules(into: destination, from: payloadDir) },
             { try assignBundleIdentifier(destination) },
             { try resignAndClearQuarantine(destination) },
-            { try verify(destination, payloadDir: payloadDir) },
+            { try verify(destination, target: target, payloadDir: payloadDir) },
         ]
         for (index, stage) in stages.enumerated() {
             await progress(index, false)
@@ -222,7 +274,7 @@ final class PatcherEngine {
                 throw PatchError("The bundled payload is missing \(module.payloadSubpath).")
             }
             guard fm.fileExists(atPath: dst.path) else {
-                throw PatchError("\(module.crossoverSubpath) not found in the copied app — is this really CrossOver \(CrossOverInfo.expectedVersion)?")
+                throw PatchError("\(module.crossoverSubpath) not found in the copied app — is this really a CrossOver installation?")
             }
             // Keep a backup of the stock module under the same name the shell script uses.
             let backup = dst.appendingPathExtension("cxorig")
@@ -272,7 +324,7 @@ final class PatcherEngine {
         try run("/usr/bin/codesign", ["--verify", app.path])
     }
 
-    private nonisolated static func verify(_ app: URL, payloadDir: URL) throws {
+    private nonisolated static func verify(_ app: URL, target: BuildTarget, payloadDir: URL) throws {
         let cxr = cxRoot(app)
         for module in Payload.modules {
             let src = payloadDir.appendingPathComponent(module.payloadSubpath)
@@ -288,7 +340,7 @@ final class PatcherEngine {
         let ntdll = cxr.appendingPathComponent("lib/wine/x86_64-unix/ntdll.so")
         try run("/usr/bin/codesign", ["--verify", ntdll.path])
         let data = try Data(contentsOf: ntdll, options: .alwaysMapped)
-        guard let needle = Payload.requiredNtdllRpath.data(using: .utf8),
+        guard let needle = target.ntdllRpath.data(using: .utf8),
               data.range(of: needle) != nil else {
             throw PatchError("ntdll.so is missing the lib64 rpath — D3DMetal would not work. Rebuild the patcher with scripts/build-app.sh (it adds the rpath to the payload).")
         }
@@ -298,7 +350,7 @@ final class PatcherEngine {
         let winebus = cxr.appendingPathComponent("lib/wine/x86_64-unix/winebus.so")
         try run("/usr/bin/codesign", ["--verify", winebus.path])
         let busData = try Data(contentsOf: winebus, options: .alwaysMapped)
-        for rpath in Payload.requiredWinebusRpaths {
+        for rpath in target.winebusRpaths {
             guard let needle = rpath.data(using: .utf8), busData.range(of: needle) != nil else {
                 throw PatchError("winebus.so is missing the rpath \(rpath) — the controller would not appear. Rebuild the patcher with scripts/build-app.sh.")
             }
