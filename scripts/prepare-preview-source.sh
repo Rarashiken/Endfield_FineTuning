@@ -22,6 +22,7 @@ SKIP="0001-ntoskrnl.exe-Implement-KeAcquireGuardedMutex.patch
 0002-ntoskrnl.exe-Implement-KeReleaseGuardedMutex.patch"
 
 echo "=== 重新解包 ==="
+mkdir -p "$R"
 rm -rf "$R/sources"
 tar -xzf "${SOURCE_TARBALL:?需要 SOURCE_TARBALL=crossover-sources-*.tar.gz}" -C "$R" sources/wine
 echo "  $(cat "$SRC/VERSION")"

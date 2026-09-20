@@ -7,6 +7,7 @@
 # 全部装进 $BUILD_ROOT/toolchain,删掉重跑即可,不碰系统。
 set -euo pipefail
 S="${BUILD_ROOT:?需要 BUILD_ROOT}/toolchain"
+mkdir -p "$S"
 cd "$S"
 
 echo "[1/3] llvm-mingw"
