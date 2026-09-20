@@ -64,6 +64,10 @@ docs/        编译环境、图形、手柄、踩坑记录
 `CrossOver.app`,它会复制一份并打好补丁 —— 原来那份不会被动。
 (源码与自行构建说明在 **[patcher-app/](patcher-app/)**。)
 
+它同时支持 **CrossOver 26.3** 和 **CrossOver Preview 20260821**。有 preview 的话它是更好的基底:
+它自带 D3DMetal 4.0b2,游戏内的 DLSS 选项开箱可用,不必手动安装 Apple 的 GPTK4。
+preview 需要用它自己建的容器 —— 见 **[scripts/make-preview-bottle.sh](scripts/make-preview-bottle.sh)**。
+
 想自己从头编译:
 
 1. 对与你所装版本匹配的 CrossOver 源码,应用上游的 23 个补丁;
@@ -77,8 +81,12 @@ docs/        编译环境、图形、手柄、踩坑记录
 ```bash
 GFXAPI=d3d11|vulkan   BACKEND=dxmt|d3dmetal   PADMODE=ps|xinput   RETINA=y|n
 MSYNC=0|1             NVEXT=0|1               MTL4=0|1            METALFX=0|1
-ARGS="..."            BOTTLE=...              LOG=0
+HUD=0|1               GPUSPOOF=0|1|"RTX 4060" CXAPP=/path/to.app  BOTTLE=...
+ARGS="..."            LOG=0
 ```
+
+`HUD=1` 打开性能浮层(需要 `MTL_HUD_ENABLED` 和 `D3DM_SHOW_HUD_STATS` 两个变量,只开一个什么都不显示)。
+`GPUSPOOF` 向游戏谎报显卡型号 —— 留着是为了不必重做这个实验,但它掉帧且在这里解锁不了任何东西。
 
 跑完会打印**游戏自己记录的结果** —— 它实际选了哪个渲染器、Metal 4 有没有真的启用 ——
 而不是把传进去的参数原样回显。

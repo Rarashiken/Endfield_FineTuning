@@ -63,6 +63,11 @@ If you just want to play, download **Endfield Patcher** from **[Releases](https:
 own `CrossOver.app`, and it produces a patched copy — your original install is left alone. (Source
 and build instructions: **[patcher-app/](patcher-app/)**.)
 
+It handles both **CrossOver 26.3** and **CrossOver Preview 20260821**. Preview is the better base if
+you have it: it ships D3DMetal 4.0b2, which makes the in-game DLSS option work without installing
+Apple's GPTK4 by hand. Preview needs its own bottle — see
+**[scripts/make-preview-bottle.sh](scripts/make-preview-bottle.sh)**.
+
 To build everything yourself:
 
 1. Apply upstream's 23 patches to CrossOver source matching your installed version.
@@ -76,8 +81,14 @@ Launcher options (all read back and verified against the bottle, never just echo
 ```bash
 GFXAPI=d3d11|vulkan   BACKEND=dxmt|d3dmetal   PADMODE=ps|xinput   RETINA=y|n
 MSYNC=0|1             NVEXT=0|1               MTL4=0|1            METALFX=0|1
-ARGS="..."            BOTTLE=...              LOG=0
+HUD=0|1               GPUSPOOF=0|1|"RTX 4060" CXAPP=/path/to.app  BOTTLE=...
+ARGS="..."            LOG=0
 ```
+
+`HUD=1` turns on the performance overlay (it needs both `MTL_HUD_ENABLED` and
+`D3DM_SHOW_HUD_STATS`; only one of them displays nothing). `GPUSPOOF` reports a different graphics
+adapter to the game — kept because the experiment is worth not repeating, but it costs frame rate and
+unlocks nothing here.
 
 It reports what the game itself logged — the renderer it actually chose, whether Metal 4 engaged —
 rather than echoing back what it was asked for.
