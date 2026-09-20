@@ -9,6 +9,13 @@
 # 《明日方舟:终末地》启动器。用环境变量覆盖下列默认值。
 
 CXR="${CXR:-/Applications/CrossOver-Endfield.app/Contents/SharedSupport/CrossOver}"
+# 战绩表要区分 CrossOver:26.3 和 preview 的卡死率不能混在一起统计。
+CXVER=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$CXAPP/Contents/Info.plist" 2>/dev/null)
+case "$CXVER" in
+  20*) CXTAG="preview-${CXVER#2026}" ;;
+  "")  CXTAG="未知" ;;
+  *)   CXTAG="$CXVER" ;;
+esac
 export CX_ROOT="$CXR"
 BOTTLE="${BOTTLE:-endfield263}"
 # Windows path to the game exe (Y: maps to your home directory)
@@ -226,7 +233,7 @@ if [ "${LOG:-1}" = "1" ]; then
 
   # 记账:间歇性卡死约五成,单次结果无意义,必须靠累计样本判断
   TALLY="$LOGDIR/战绩.csv"
-  [ -f "$TALLY" ] || echo "时间,API,后端,msync,nvext,retina,手柄,参数,结果,日志" > "$TALLY"
+  [ -f "$TALLY" ] || echo "时间,后端,msync,nvext,retina,手柄,参数,结果,日志" > "$TALLY"
   echo
   printf '这次卡死了吗? [y=卡了 / n=正常 / 回车=跳过] '
   read -r -t 120 VERDICT || VERDICT=""
@@ -236,33 +243,33 @@ if [ "${LOG:-1}" = "1" ]; then
     *)   R=未记录 ;;
   esac
   # 用 csv 模块写读,ARGS 里出现逗号也不会错位
-  /usr/bin/python3 - "$TALLY" "$GFXAPI" "$GOT_B" "$GOT_M" "$GOT_N" "$RETINA" "$PADMODE" "$ARGS" "$R" "$(basename "$LOGFILE")" <<'TALLYPY'
+  /usr/bin/python3 - "$TALLY" "$CXTAG" "$GFXAPI" "$GOT_B" "$GOT_M" "$GOT_N" "$RETINA" "$PADMODE" "$ARGS" "$R" "$(basename "$LOGFILE")" <<'TALLYPY'
 import sys, csv, os, datetime
-path, api, b, m, nv, ret, pad, args, r, logf = sys.argv[1:11]
-cfg = (api, b, m, nv, ret, pad, args)
+path, cx, api, b, m, nv, ret, pad, args, r, logf = sys.argv[1:12]
+cfg = (cx, api, b, m, nv, ret, pad, args)
 with open(path, 'a', newline='', encoding='utf-8') as f:
     csv.writer(f).writerow([datetime.datetime.now().strftime('%Y-%m-%d %H:%M'),
-                            api, b, m, nv, ret, pad, args, r, logf])
+                            cx, api, b, m, nv, ret, pad, args, r, logf])
 if r == '未记录':
     sys.exit(0)
 rows = list(csv.reader(open(path, encoding='utf-8')))[1:]
-same = [x for x in rows if len(x) >= 9 and tuple(x[1:8]) == cfg and x[8] != '未记录']
-tot = len(same); bad = sum(1 for x in same if x[8] == '卡死')
+same = [x for x in rows if len(x) >= 10 and tuple(x[1:9]) == cfg and x[9] != '未记录']
+tot = len(same); bad = sum(1 for x in same if x[9] == '卡死')
 print(f"已记录。此配置累计 {tot} 次,卡死 {bad} 次" + (f" ({bad*100//tot}%)" if tot else ""))
 if tot < 5:
     print(f"样本还差 {5-tot} 次才有参考意义。")
 # 顺带列出其它配置,方便横向对比
 others = {}
 for x in rows:
-    if len(x) < 9 or x[8] == '未记录': continue
-    k = tuple(x[1:8])
+    if len(x) < 10 or x[9] == '未记录': continue
+    k = tuple(x[1:9])
     if k == cfg: continue
     t, bd = others.get(k, (0, 0))
-    others[k] = (t + 1, bd + (x[8] == '卡死'))
+    others[k] = (t + 1, bd + (x[9] == '卡死'))
 if others:
     print("其它配置:")
     for k, (t, bd) in sorted(others.items()):
-        print(f"  API={k[0]} 后端={k[1]} msync={k[2]} nvext={k[3]} retina={k[4]} 手柄={k[5]} args={k[6] or '(空)'}  ->  {t} 次卡死 {bd} 次")
+        print(f"  {k[0]} API={k[1]} 后端={k[2]} msync={k[3]} nvext={k[4]} retina={k[5]} 手柄={k[6]} args={k[7] or '(空)'}  ->  {t} 次卡死 {bd} 次")
 TALLYPY
   echo "明细: $TALLY"
   exit $RC

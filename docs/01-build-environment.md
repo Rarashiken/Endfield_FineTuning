@@ -26,7 +26,7 @@ make -j$(sysctl -n hw.ncpu) && make install
 Needed only to build `winebus.so` with SDL support. Match the version CrossOver ships:
 
 ```bash
-A=/Applications/CrossOver-Endfield.app/Contents/SharedSupport/CrossOver
+A=/Applications/CrossOver.app/Contents/SharedSupport/CrossOver   # or your Preview install
 strings -a "$A/lib64/libSDL2-2.0.0.dylib" | grep -o 'SDL-release-[0-9.]*' | sort -u   # e.g. 2.30.12
 
 mkdir -p "$S/sdl2" && cd "$S/sdl2"
