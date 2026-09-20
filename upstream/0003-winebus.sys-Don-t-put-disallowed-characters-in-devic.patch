@@ -1,5 +1,5 @@
 From b68b571bb0d70022dc634e24bbf557e108b7a792 Mon Sep 17 00:00:00 2001
-From: sasayaki <91686758+Rarashiken@users.noreply.github.com>
+From: sasayaki <luo17717490371@gmail.com>
 Date: Sun, 20 Sep 2026 03:03:41 +0900
 Subject: [PATCH] winebus.sys: Don't put disallowed characters in device
  instance IDs.
@@ -21,7 +21,7 @@ Replace the disallowed characters when building the instance ID.
 desc.serialnumber itself is left alone, so the HID serial number string
 reported to applications keeps its original form.
 
-Signed-off-by: sasayaki <91686758+Rarashiken@users.noreply.github.com>
+Signed-off-by: sasayaki <luo17717490371@gmail.com>
 ---
  dlls/winebus.sys/main.c | 12 ++++++++++++
  1 file changed, 12 insertions(+)

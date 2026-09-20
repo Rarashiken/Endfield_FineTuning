@@ -30,9 +30,16 @@ Suggested split — they are independent, and one is far less contentious than t
 | first | `0003` | a plain correctness fix, no behaviour choice to argue about |
 | later | `0001` + `0002` | a deliberate behaviour change; expect discussion (see below) |
 
-The `Signed-off-by` lines currently use a GitHub `users.noreply.github.com` address. That works
-mechanically, but a reachable address is better for a project that may want to ask questions about a
-patch months later — worth changing before submitting.
+### Applying these to a Wine checkout
+
+```bash
+git clone https://gitlab.winehq.org/wine/wine.git && cd wine
+git checkout -b winebus-instance-id-charset
+git am /path/to/upstream/0003-*.patch
+```
+
+`git am` carries the author and `Signed-off-by` across as they are in the file. Push the branch to
+your fork and open the MR against `wine/wine` `master`.
 
 
 ## 0003 — device instance IDs

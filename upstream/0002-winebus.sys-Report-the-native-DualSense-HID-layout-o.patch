@@ -1,5 +1,5 @@
 From f3fd914d75023efcea545dd79e46807e12730ee1 Mon Sep 17 00:00:00 2001
-From: sasayaki <91686758+Rarashiken@users.noreply.github.com>
+From: sasayaki <luo17717490371@gmail.com>
 Date: Sun, 20 Sep 2026 02:53:10 +0900
 Subject: [PATCH 2/2] winebus.sys: Report the native DualSense HID layout on
  the SDL backend.
@@ -34,7 +34,7 @@ Tied to the "Sony XInput" value from the previous patch: in the default
 mode winexinput.sys translates the XUSB-shaped descriptor into XInput
 state, so the layout must not change there.
 
-Signed-off-by: sasayaki <91686758+Rarashiken@users.noreply.github.com>
+Signed-off-by: sasayaki <luo17717490371@gmail.com>
 ---
  dlls/winebus.sys/bus_sdl.c | 89 ++++++++++++++++++++++++++++++++++++--
  dlls/winebus.sys/main.c    |  1 +
